@@ -1,10 +1,12 @@
-from openai import OpenAI 
+import os
+from openai import OpenAI
 import json
 from tqdm import tqdm
+
 client = OpenAI(
-    api_key="Yor API KEY",
-    base_url=""
-) 
+    api_key=os.environ.get("DEEPSEEK_API_KEY", "your_key"),
+    base_url="https://api.deepseek.com"
+)
 
 TYPE1_TEMPLATE = """Act as a SPARQL expert. 
 I need you to explain the meaning and function of a specific part of a SPARQL query.
@@ -119,41 +121,125 @@ Question: How does ?entity3 related to ?entity1 and ?entity2 ? Please answer the
 Answer: 
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+
+MAX_WORKERS = 20  # parallel requests
+SAVE_EVERY = 500  # save intermediate results every N keys
+RETRIES = 3
+
+_write_lock = threading.Lock()
+
+
 def get_response(prompt):
-    completion = client.chat.completions.create(
-        model="glm-4-plus",  
-        messages=[    
-            {"role": "user", "content": prompt} 
-        ],
-        top_p=0.7,
-        temperature=0.9
-    ) 
-    return completion.choices[0].message.content
+    for attempt in range(RETRIES):
+        try:
+            completion = client.chat.completions.create(
+                model="deepseek-v4-flash",
+                messages=prompt,
+                top_p=0.7,
+                temperature=0.9,
+                extra_body={"thinking": {"type": "disabled"}},
+            )
+            return completion.choices[0].message.content
+        except Exception as e:
+            if attempt == RETRIES - 1:
+                raise
+            import time
+            time.sleep(2 ** attempt)
 
-with open("output/all_key.json", "r") as f:
-    all_key = json.load(f)
 
-key_explain = {}
-for type in all_key:
-    if type == "1":
-        for key in tqdm(all_key[type]):
-            prompt = TYPE1_TEMPLATE.format(sparql=key)
-            key_explain[key] = get_response(prompt)
-        with open("output/key_explain1.json", "w") as f:
-            json.dump(key_explain, f)
-    elif type == "2":
-        for key in tqdm(all_key[type]):
-            prompt = TYPE2_TEMPLATE.format(sparql=key)
-            key_explain[key] = get_response(prompt)
-        with open("output/key_explain2.json", "w") as f:
-            json.dump(key_explain, f)
-    elif type == "3":
-        for key in tqdm(all_key[type]):
-            prompt = TYPE3_TEMPLATE.format(sparql=key)
-            key_explain[key] = get_response(prompt)
-        with open("output/key_explain3.json", "w") as f:
-            json.dump(key_explain, f)
+def _explain_one(pair):
+    key, messages = pair
+    return key, get_response(messages)
 
-with open("output/key_explain.json", "w") as f:
-    json.dump(key_explain, f)
-            
+
+def _save_snapshot(data, path):
+    with _write_lock:
+        with open(path, "w") as f:
+            json.dump(data, f)
+
+
+def load_snapshot(path):
+    """Load existing results from a snapshot file, or return empty dict."""
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+
+def process_keys(keys, template, desc, snapshot_path):
+    """Process a list of keys in parallel with progress bar, incremental saves, and resume."""
+    results = load_snapshot(snapshot_path)
+
+    # Split template at {sparql}: system = cached prefix, user = key + question
+    parts = template.split("{sparql}")
+    system_msg = parts[0].rstrip()
+    user_suffix = parts[1].lstrip()
+
+    remaining = [
+        (k, [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": f"{k}\n{user_suffix}"},
+        ])
+        for k in keys if k not in results
+    ]
+
+    if not remaining:
+        print(f"  {desc}: all {len(keys)} already cached — skipping")
+        return results
+
+    skipped = len(keys) - len(remaining)
+    print(f"  {desc}: {len(remaining)} new / {skipped} cached / {len(keys)} total")
+
+    completed = len(results)
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = {pool.submit(_explain_one, p): p[0] for p in remaining}
+        with tqdm(total=len(remaining), desc=desc, initial=0) as pbar:
+            for future in as_completed(futures):
+                try:
+                    key, explanation = future.result()
+                    results[key] = explanation
+                except Exception as e:
+                    key = futures[future]
+                    results[key] = f"ERROR: {e}"
+                    tqdm.write(f"Failed {key[:60]}... : {e}")
+
+                completed += 1
+                pbar.update(1)
+
+                if completed % SAVE_EVERY == 0:
+                    _save_snapshot(results, snapshot_path)
+
+    _save_snapshot(results, snapshot_path)
+    return results
+
+
+if __name__ == "__main__":
+    with open("output/all_key.json", "r") as f:
+        all_key = json.load(f)
+
+    key_explain = {}
+
+    for type_key in ("1", "2", "3"):
+        keys = all_key.get(type_key, [])
+        if not keys:
+            continue
+
+        if type_key == "1":
+            tmpl = TYPE1_TEMPLATE
+        elif type_key == "2":
+            tmpl = TYPE2_TEMPLATE
+        else:
+            tmpl = TYPE3_TEMPLATE
+
+        print(f"\nType {type_key}: {len(keys)} keys, {MAX_WORKERS} workers")
+        result = process_keys(keys, tmpl, f"Type {type_key}", f"output/key_explain{type_key}.json")
+        key_explain.update(result)
+
+    with open("output/key_explain.json", "w") as f:
+        json.dump(key_explain, f)
+
+    print(f"\nDone: {len(key_explain)} keys explained")

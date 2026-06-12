@@ -23,9 +23,9 @@ FILTER (!isLiteral(?x) OR lang(?x) = '' OR langMatches(lang(?x), 'en')) .
 def get_friendly_name(mid):
     if mid[:3] != "ns:":
         mid = "ns:" + mid
-    query = NAME_QUERY.format(entity= mid)
+    query = NAME_QUERY.replace('{entity}', mid)
     try:
-        name = get_result(query)[0]
+        name = get_result(query, "x")[0]
         return name
     except:
         raise Exception(f"unable to get name for {mid}")

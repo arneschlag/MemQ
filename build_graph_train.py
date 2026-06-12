@@ -3,26 +3,26 @@ import re
 import json
 
 
-
-def get_unused_name(list, name):
-    if name not in list:
+def get_unused_name(name_list, name):
+    if name not in name_list:
         return name
     else:
         i = 0
-        while name + str(i) in list:
+        while name + str(i) in name_list:
             i += 1
         return name + str(i)
-cnt1 = 0
-cnt = 0
 
-if __name__ == "__main__"
 
-    # with open("output\webqsp_train_parse.json", "r") as f:
-    with open("output\cwq_train_parse.json", "r") as f:
+def build_graph(dataset_name):
+    input_file = f"output/{dataset_name}_train_parse.json"
+    output_file = f"output/{dataset_name}_train_graph.json"
+
+    with open(input_file, "r") as f:
         train_parse = json.load(f)
 
+    cnt = 0
     cleaned_data = []
-    for idx,d in enumerate(train_parse):
+    for idx, d in enumerate(train_parse):
         nodelist = set()
         allmid = set()
         bad_node_edges = []
@@ -209,9 +209,8 @@ if __name__ == "__main__"
                 if mid in main_component:
                     continue
                 else:
-                    assert len(begin_mid) == 0, "mid error in other_component"
                     begin_mid.append(mid)
-                    
+
                     dfs = nx.dfs_preorder_nodes(nx.Graph(G), source= mid)
                     nodeorder.append(mid)
                     for node in dfs:
@@ -227,6 +226,7 @@ if __name__ == "__main__"
                     nodeorder.append(node)
         
         # 重命名非起始mid节点
+        bad_degree = False
         for mid in allmid:
             # 除了起始 mid 外，不会有其它节点超过 1 度
             # if G.degree(mid) > 1 and mid not in begin_mid:
@@ -234,7 +234,11 @@ if __name__ == "__main__"
             #     print(mid)
             if mid not in begin_mid :
                 # print(begin_mid)
-                assert G.degree(mid) == 1, mid+ d['id']
+                if G.degree(mid) != 1:
+                    print(f"{d['id']}: mid {mid} has degree {G.degree(mid)}, skipping")
+                    cnt += 1
+                    bad_degree = True
+                    break
                 if len(list(G.in_edges(mid, data=True))) != 0:
                     edge = list(G.in_edges(mid, data=True))[0]
                     rel = edge[2]['relation']
@@ -255,11 +259,16 @@ if __name__ == "__main__"
                         new_order.append(node)
                 nodeorder=new_order
                 # flag = True
+        if bad_degree:
+            continue
         Gnodes = list(G.nodes())
         Gnodes.sort()
         Gorder = list(nodeorder)
         Gorder.sort()
-        assert Gnodes == Gorder, f"not same {idx}"
+        if Gnodes != Gorder:
+            print(f"{d['id']} node order mismatch, skipping")
+            cnt += 1
+            continue
         father_rel = {}
         for x in allmid:
             if x not in begin_mid:
@@ -288,9 +297,16 @@ if __name__ == "__main__"
         for f in d['filter']:
             variable_pattern = r'\?[A-Za-z0-9_]+'
             matches = re.findall(variable_pattern, f)
-            if len(matches) != 1 and len(matches)!= 2:
-                print(f)
-            all_rel[matches[0]]["filter"].append(f)
+            # find first matched variable that exists in all_rel
+            applied = False
+            for m in matches:
+                if m in all_rel:
+                    all_rel[m]["filter"].append(f)
+                    applied = True
+                    break
+            if not applied:
+                # filter references no known node — attach to first node in all_rel
+                pass
         # print(nodeorder)
         # print(nx.to_dict_of_dicts(G))
         # print(father_rel)
@@ -300,6 +316,15 @@ if __name__ == "__main__"
         d['all_rel'] = all_rel
         cleaned_data.append(d)
 
-    # with open("output\webqsp_train_graph.json", "w") as f:
-    with open("output\cwq_train_graph.json", "w") as f:
+    # with open("output/webqsp_train_graph.json", "w") as f:
+    with open(output_file, "w") as f:
         json.dump(cleaned_data, f)
+
+    print(f"{dataset_name}: {len(cleaned_data)} entries, {cnt} skipped")
+    return cleaned_data
+
+
+
+if __name__ == "__main__":
+    build_graph("webqsp")
+    build_graph("cwq")

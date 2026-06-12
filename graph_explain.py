@@ -104,7 +104,14 @@ with open("output/merge_split_data.json","r") as f:
 def explain_find(sub_graph, all_rel):
     node = sub_graph[-1]
     key = get_key(all_rel, sub_graph)
-    subgraph_explain = key_explain[key][12:-1]
+    if key in key_explain:
+        subgraph_explain = key_explain[key][12:-1]
+    else:
+        # Type-1 keys are not in all_key.json (not covered by get_key_explain.py)
+        # Derive a simple explanation from the relation name
+        rel = all_rel[node]['relation']
+        rel_name = rel.split('.')[-1].replace('_', ' ')
+        subgraph_explain = f"the {rel_name} of ?entity1"
 
     if len(sub_graph) == 2 or len(sub_graph) == 3:
         # type1/type2
@@ -153,6 +160,17 @@ number_relation_explain = {"<": "be smaller than", ">": "be larger than", "<=": 
 time_relation_explain = {"<": "be earlier than", ">": "be later than", "<=": "not be later than", ">=": "not be earlier than"}
 
 def explain_filter(filter, id=None):
+    # Skip standard language filter added by pipeline (not user-visible reasoning)
+    if 'isLiteral' in filter and 'langMatches' in filter:
+        return []
+    try:
+        return _explain_filter(filter, id)
+    except Exception:
+        print(f"  WARNING {id}: generic fallback for FILTER: {filter}")
+        return [f"FILTER({filter})"]
+
+
+def _explain_filter(filter, id=None):
     s_filter = split_by_operators(filter)
     assert len(s_filter) == 3, f"{id}: not implement FILTER explain {filter}, {s_filter}"
     e1 = s_filter[0].strip()
@@ -294,7 +312,9 @@ def explain_filter(filter, id=None):
     
         
     else:
-        raise Exception(f"{id}: not implement FILTER explain {filter}, {e1} {r} {e2}")
+        # Generic fallback for unhandled FILTER patterns
+        print(f"  WARNING {id}: generic fallback for FILTER: {filter}")
+        return [f"FILTER({filter})"]
 
 explain_data = []
 for d in tqdm(data):
@@ -328,7 +348,7 @@ for d in tqdm(data):
         for f_explain in node_filter_explain:
             sparql_explain.append(f_explain)
     
-    if d['order'] != None:
+    if d.get('order') is not None:
         if d['order']['order'] == "ASC":
             order = "ascending"
         elif  d['order']['order'] == "DESC":

@@ -1,0 +1,8 @@
+*.zip
+*.json
+*.db
+*.dot
+TRAINING_SUMMARY.md
+*.pyc
+cwq_dataset/*
+webqsp/*

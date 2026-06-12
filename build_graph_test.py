@@ -15,8 +15,8 @@ def get_unused_name(list, name):
         return name + str(i)
 
 
-# with open("output\webqsp_test_parse.json", "r") as f:
-with open("output\cwq_test_parse.json", "r") as f:
+# with open("output/webqsp_test_parse.json", "r") as f:
+with open("output/cwq_test_parse.json", "r") as f:
     test_parse = json.load(f)
 cnt1 = 0
 cnt = 0
@@ -301,8 +301,6 @@ for idx,d in enumerate(test_parse):
     for f in d['filter']:
         variable_pattern = r'\?[A-Za-z0-9_]+'
         matches = re.findall(variable_pattern, f)
-        if len(matches) != 1 and len(matches)!= 2:
-            print(f)
         all_rel[matches[0]]["filter"].append(f)
     # print(nodeorder)
     # print(nx.to_dict_of_dicts(G))
@@ -314,6 +312,6 @@ for idx,d in enumerate(test_parse):
     cleaned_data.append(d)
 
 print(len(test_parse),len(cleaned_data))
-# with open("output\webqsp_test_graph.json", "w") as f:
-with open("output\cwq_test_graph.json", "w") as f:
+# with open("output/webqsp_test_graph.json", "w") as f:
+with open("output/cwq_test_graph.json", "w") as f:
     json.dump(cleaned_data, f)

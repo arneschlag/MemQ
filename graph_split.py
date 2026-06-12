@@ -76,9 +76,9 @@ def get_key(all_rel, nodes):
 merge_data = []
 all_key = {"1":[],"2":[],"3":[]}
 
-with open("output\webqsp_train_cvt_list.json","r") as f:
+with open("output/webqsp_train_cvt_list.json","r") as f:
     webqspdata = json.load(f)
-with open("output\cwq_train_cvt_list.json","r") as f:
+with open("output/cwq_train_cvt_list.json","r") as f:
     cwqdata = json.load(f)
 
 for d in webqspdata:
