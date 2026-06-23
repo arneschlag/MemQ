@@ -224,7 +224,9 @@ if __name__ == "__main__":
     key_explain = {}
 
     for type_key in ("1", "2", "3"):
-        keys = all_key.get(type_key, [])
+        # all_key[type] holds one entry per occurrence (40k+ for Type-1); the memory
+        # only needs each unique SPARQL pattern explained once. Dedupe, preserve order.
+        keys = list(dict.fromkeys(all_key.get(type_key, [])))
         if not keys:
             continue
 

@@ -22,7 +22,12 @@ def get_name(mid):
     if mid in mid_names:
         return mid_names[mid]
     else:
-        name = get_friendly_name(mid)
+        try:
+            name = get_friendly_name(mid)
+        except Exception:
+            # Some Freebase entities have no type.object.name. Fall back
+            # to the MID itself so the prompt always has a topic entity.
+            name = mid
         mid_names[mid] = name
         return name
 

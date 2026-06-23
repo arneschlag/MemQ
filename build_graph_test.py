@@ -15,24 +15,24 @@ def get_unused_name(list, name):
         return name + str(i)
 
 
-# with open("output/webqsp_test_parse.json", "r") as f:
-with open("output/cwq_test_parse.json", "r") as f:
+with open("output/webqsp_test_parse.json", "r") as f:
+# with open("output/cwq_test_parse.json", "r") as f:
     test_parse = json.load(f)
 cnt1 = 0
 cnt = 0
 
 cleaned_data = []
-for idx,d in enumerate(test_parse):
+def _process_entry(idx, d):
+    global cnt, cnt1
     nodelist = set()
     allmid = set()
     bad_node_edges = []
     if 'where' not in d.keys():
-        cleaned_data.append(d)
         d['G'] = None
         d['nodeorder'] = None
         d['main_path'] = [d['BegE']]
         d['all_rel'] = None
-        continue
+        return d
     for e in d['where']:
         if "ns:" in e[0]:
             allmid.add(e[0])
@@ -119,10 +119,10 @@ for idx,d in enumerate(test_parse):
         cnt += 1
         # print(d['BegE'])
         print(d['ori_sparql'])
-        
+
         # print(d['question'])
         # print(idx)
-        continue
+        return None
     
     # 找主要路径
     
@@ -173,8 +173,7 @@ for idx,d in enumerate(test_parse):
             d['nodeorder'] = None
             d['main_path'] = [d['BegE']]
             d['all_rel'] = None
-            cleaned_data.append(d)
-            continue
+            return d
         # 没有Main Entity的情况 直接删除
         else:
             # print(d['ori_sparql'])
@@ -184,8 +183,7 @@ for idx,d in enumerate(test_parse):
             d['nodeorder'] = None
             d['main_path'] = [d['BegE']]
             d['all_rel'] = None
-            cleaned_data.append(d)
-            continue
+            return d
     assert "ns:" in main_path[0], f"{d['id']}"
     d['BegE'] = main_path[0]
 
@@ -309,9 +307,24 @@ for idx,d in enumerate(test_parse):
     d['nodeorder'] = nodeorder
     d['main_path'] = main_path
     d['all_rel'] = all_rel
-    cleaned_data.append(d)
+    return d
+
+
+_skipped = []
+for idx, d in enumerate(test_parse):
+    try:
+        _r = _process_entry(idx, d)
+    except Exception as _e:
+        _skipped.append((d.get('id'), repr(_e)))
+        continue
+    if _r is not None:
+        cleaned_data.append(_r)
+if _skipped:
+    print(f"[build_graph_test] skipped {len(_skipped)} unrepresentable entries:")
+    for _id, _err in _skipped:
+        print(f"    {_id}: {_err}")
 
 print(len(test_parse),len(cleaned_data))
-# with open("output/webqsp_test_graph.json", "w") as f:
-with open("output/cwq_test_graph.json", "w") as f:
+with open("output/webqsp_test_graph.json", "w") as f:
+# with open("output/cwq_test_graph.json", "w") as f:
     json.dump(cleaned_data, f)

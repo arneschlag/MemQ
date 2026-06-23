@@ -1,0 +1,165 @@
+########## webqsp Exp2 adaptive g1=0.90 g2=0.80 ##########
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 8348.08it/s]
+[lookup] DS=webqsp plan=output/webqsp_test_plan_v10.json retrieval=adaptive embed=model/all-MiniLM-L6-v2 memory=897 keys items=1637
+  200/1637 struct_acc=0.418 fails=1
+  400/1637 struct_acc=0.434 fails=1
+  600/1637 struct_acc=0.424 fails=1
+  800/1637 struct_acc=0.427 fails=2
+  1000/1637 struct_acc=0.438 fails=2
+  1200/1637 struct_acc=0.442 fails=3
+  1400/1637 struct_acc=0.444 fails=5
+  1600/1637 struct_acc=0.442 fails=7
+============================================================
+[lookup] webqsp | items=1637 | reconstruction fails=7
+[lookup] Structure-Acc (all): 726/1637 = 0.4435
+[lookup] Structure-Acc (gold present): 726/1637 = 0.4435
+[lookup] wrote output/webqsp_test_lookup_exp2_adaptive_90_80.json
+########## webqsp Exp2 adaptive g1=0.85 g2=0.70 ##########
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 10077.76it/s]
+[lookup] DS=webqsp plan=output/webqsp_test_plan_v10.json retrieval=adaptive embed=model/all-MiniLM-L6-v2 memory=897 keys items=1637
+  200/1637 struct_acc=0.418 fails=1
+  400/1637 struct_acc=0.434 fails=1
+  600/1637 struct_acc=0.424 fails=1
+  800/1637 struct_acc=0.427 fails=2
+  1000/1637 struct_acc=0.439 fails=2
+  1200/1637 struct_acc=0.443 fails=3
+  1400/1637 struct_acc=0.445 fails=5
+  1600/1637 struct_acc=0.442 fails=7
+============================================================
+[lookup] webqsp | items=1637 | reconstruction fails=7
+[lookup] Structure-Acc (all): 727/1637 = 0.4441
+[lookup] Structure-Acc (gold present): 727/1637 = 0.4441
+[lookup] wrote output/webqsp_test_lookup_exp2_adaptive_85_70.json
+########## webqsp Exp3 mpnet (legacy retrieval) ##########
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|██████████| 199/199 [00:00<00:00, 9004.92it/s]
+[lookup] DS=webqsp plan=output/webqsp_test_plan_v10.json retrieval=legacy embed=model/all-mpnet-base-v2 memory=897 keys items=1637
+  200/1637 struct_acc=0.313 fails=1
+  400/1637 struct_acc=0.317 fails=1
+  600/1637 struct_acc=0.319 fails=1
+  800/1637 struct_acc=0.316 fails=2
+  1000/1637 struct_acc=0.318 fails=2
+  1200/1637 struct_acc=0.317 fails=3
+  1400/1637 struct_acc=0.317 fails=5
+  1600/1637 struct_acc=0.315 fails=7
+============================================================
+[lookup] webqsp | items=1637 | reconstruction fails=7
+[lookup] Structure-Acc (all): 519/1637 = 0.3170
+[lookup] Structure-Acc (gold present): 519/1637 = 0.3170
+[lookup] wrote output/webqsp_test_lookup_exp3_mpnet_legacy.json
+########## webqsp Exp3 mpnet + adaptive g1=0.90 g2=0.80 ##########
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|██████████| 199/199 [00:00<00:00, 9875.96it/s]
+[lookup] DS=webqsp plan=output/webqsp_test_plan_v10.json retrieval=adaptive embed=model/all-mpnet-base-v2 memory=897 keys items=1637
+  200/1637 struct_acc=0.418 fails=1
+  400/1637 struct_acc=0.434 fails=1
+  600/1637 struct_acc=0.424 fails=1
+  800/1637 struct_acc=0.427 fails=2
+  1000/1637 struct_acc=0.438 fails=2
+  1200/1637 struct_acc=0.443 fails=3
+  1400/1637 struct_acc=0.445 fails=5
+  1600/1637 struct_acc=0.442 fails=7
+============================================================
+[lookup] webqsp | items=1637 | reconstruction fails=7
+[lookup] Structure-Acc (all): 727/1637 = 0.4441
+[lookup] Structure-Acc (gold present): 727/1637 = 0.4441
+[lookup] wrote output/webqsp_test_lookup_exp3_mpnet_adaptive_90_80.json
+########## cwq Exp2 adaptive g1=0.90 g2=0.80 ##########
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 10499.27it/s]
+[lookup] DS=cwq plan=output/cwq_test_plan_v10.json retrieval=adaptive embed=model/all-MiniLM-L6-v2 memory=897 keys items=3531
+  200/3531 struct_acc=0.159 fails=9
+  400/3531 struct_acc=0.165 fails=19
+  600/3531 struct_acc=0.170 fails=29
+  800/3531 struct_acc=0.176 fails=58
+  1000/3531 struct_acc=0.191 fails=84
+  1200/3531 struct_acc=0.210 fails=105
+  1400/3531 struct_acc=0.216 fails=119
+  1600/3531 struct_acc=0.214 fails=142
+  1800/3531 struct_acc=0.219 fails=172
+  2000/3531 struct_acc=0.223 fails=196
+  2200/3531 struct_acc=0.224 fails=212
+  2400/3531 struct_acc=0.228 fails=232
+  2600/3531 struct_acc=0.233 fails=246
+  2800/3531 struct_acc=0.235 fails=264
+  3000/3531 struct_acc=0.235 fails=284
+  3200/3531 struct_acc=0.237 fails=308
+  3400/3531 struct_acc=0.234 fails=327
+============================================================
+[lookup] cwq | items=3531 | reconstruction fails=339
+[lookup] Structure-Acc (all): 824/3531 = 0.2334
+[lookup] Structure-Acc (gold present): 824/3531 = 0.2334
+[lookup] wrote output/cwq_test_lookup_exp2_adaptive_90_80.json
+########## cwq Exp2 adaptive g1=0.85 g2=0.70 ##########
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 10298.78it/s]
+[lookup] DS=cwq plan=output/cwq_test_plan_v10.json retrieval=adaptive embed=model/all-MiniLM-L6-v2 memory=897 keys items=3531
+  200/3531 struct_acc=0.159 fails=9
+  400/3531 struct_acc=0.165 fails=19
+  600/3531 struct_acc=0.170 fails=29
+  800/3531 struct_acc=0.176 fails=58
+  1000/3531 struct_acc=0.191 fails=84
+  1200/3531 struct_acc=0.210 fails=105
+  1400/3531 struct_acc=0.216 fails=119
+  1600/3531 struct_acc=0.214 fails=142
+  1800/3531 struct_acc=0.219 fails=172
+  2000/3531 struct_acc=0.223 fails=196
+  2200/3531 struct_acc=0.224 fails=212
+  2400/3531 struct_acc=0.228 fails=232
+  2600/3531 struct_acc=0.233 fails=246
+  2800/3531 struct_acc=0.235 fails=264
+  3000/3531 struct_acc=0.235 fails=284
+  3200/3531 struct_acc=0.237 fails=308
+  3400/3531 struct_acc=0.234 fails=327
+============================================================
+[lookup] cwq | items=3531 | reconstruction fails=339
+[lookup] Structure-Acc (all): 824/3531 = 0.2334
+[lookup] Structure-Acc (gold present): 824/3531 = 0.2334
+[lookup] wrote output/cwq_test_lookup_exp2_adaptive_85_70.json
+########## cwq Exp3 mpnet (legacy retrieval) ##########
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|██████████| 199/199 [00:00<00:00, 11529.98it/s]
+[lookup] DS=cwq plan=output/cwq_test_plan_v10.json retrieval=legacy embed=model/all-mpnet-base-v2 memory=897 keys items=3531
+  200/3531 struct_acc=0.090 fails=9
+  400/3531 struct_acc=0.090 fails=19
+  600/3531 struct_acc=0.085 fails=29
+  800/3531 struct_acc=0.076 fails=58
+  1000/3531 struct_acc=0.074 fails=84
+  1200/3531 struct_acc=0.073 fails=105
+  1400/3531 struct_acc=0.071 fails=119
+  1600/3531 struct_acc=0.067 fails=142
+  1800/3531 struct_acc=0.069 fails=172
+  2000/3531 struct_acc=0.069 fails=196
+  2200/3531 struct_acc=0.070 fails=212
+  2400/3531 struct_acc=0.070 fails=232
+  2600/3531 struct_acc=0.072 fails=246
+  2800/3531 struct_acc=0.071 fails=264
+  3000/3531 struct_acc=0.073 fails=284
+  3200/3531 struct_acc=0.075 fails=308
+  3400/3531 struct_acc=0.075 fails=327
+============================================================
+[lookup] cwq | items=3531 | reconstruction fails=339
+[lookup] Structure-Acc (all): 264/3531 = 0.0748
+[lookup] Structure-Acc (gold present): 264/3531 = 0.0748
+[lookup] wrote output/cwq_test_lookup_exp3_mpnet_legacy.json
+########## cwq Exp3 mpnet + adaptive g1=0.90 g2=0.80 ##########
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|██████████| 199/199 [00:00<00:00, 10403.68it/s]
+[lookup] DS=cwq plan=output/cwq_test_plan_v10.json retrieval=adaptive embed=model/all-mpnet-base-v2 memory=897 keys items=3531
+  200/3531 struct_acc=0.154 fails=9
+  400/3531 struct_acc=0.162 fails=19
+  600/3531 struct_acc=0.168 fails=29
+  800/3531 struct_acc=0.175 fails=58
+  1000/3531 struct_acc=0.190 fails=84
+  1200/3531 struct_acc=0.209 fails=105
+  1400/3531 struct_acc=0.216 fails=119
+  1600/3531 struct_acc=0.213 fails=142
+  1800/3531 struct_acc=0.218 fails=172
+  2000/3531 struct_acc=0.222 fails=196
+  2200/3531 struct_acc=0.224 fails=212
+  2400/3531 struct_acc=0.227 fails=232
+  2600/3531 struct_acc=0.233 fails=246
+  2800/3531 struct_acc=0.235 fails=264
+  3000/3531 struct_acc=0.235 fails=284
+  3200/3531 struct_acc=0.236 fails=308
+  3400/3531 struct_acc=0.234 fails=327
+============================================================
+[lookup] cwq | items=3531 | reconstruction fails=339
+[lookup] Structure-Acc (all): 822/3531 = 0.2328
+[lookup] Structure-Acc (gold present): 822/3531 = 0.2328
+[lookup] wrote output/cwq_test_lookup_exp3_mpnet_adaptive_90_80.json
+ALL_EXP23_DONE

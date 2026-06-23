@@ -106,6 +106,7 @@ for d in merge_data:
                 type1 = [father, node]
                 splited_graph.append(type1)
                 key = get_key(all_rel, type1)
+                all_key["1"].append(key)
                 # assert key in key_explain, key
                 # print(type1)
                 # print(key)

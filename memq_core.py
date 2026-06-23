@@ -1,0 +1,443 @@
+"""MemQ reconstruction core — shared, **database-free**.
+
+Factored out of the original all-in-one `reconstruct.py` so the lookup pass
+(memory retrieval + SPARQL-string assembly + structure accuracy) can run in the
+background with NO Freebase service. The only thing that touches the DB is the
+*answer* execution, which lives in `score_answers.py`.
+
+Retrieval is configurable via env vars so Exp 2/3 don't need code edits:
+  MEMQ_EMBED_MODEL  sentence-transformers path   (default model/all-MiniLM-L6-v2)
+  MEMQ_RETRIEVAL    legacy | adaptive            (default legacy = today's reranker)
+  MEMQ_GAMMA1       adaptive: top-1 cutoff       (default 0.90)
+  MEMQ_GAMMA2       adaptive: multi-recall cutoff(default 0.80)
+  MEMQ_KEY_EXPLAIN  memory file                  (default output/key_explain.json)
+
+Importing this module builds the embedding index once (needs torch). Keep it out
+of `score_answers.py`, which must stay torch-free.
+"""
+import os
+import re
+import json
+import numpy as np
+from scipy.spatial.distance import cdist
+import networkx as nx
+from sentence_transformers import SentenceTransformer
+
+# ---------------------------------------------------------------- regex patterns
+variablepattern = r"\?[A-Za-z0-9_]+"
+midnamepattern = r"\*(.+)\*"
+integer_pattern = r'[-+]?\d+'
+filterfloatpattern = r"a float (\"[-+]?\d+\.\d+\")"
+filterstrpattern = r"a string (\"[^\"]+\")"
+filterdatetimepattern = r"(\d{4}-\d{2}-\d{2})"
+sortdatetimepattern = r"datetime (\?[A-Za-z0-9_]+)"
+sortintegerpattern = r"integer (\?[A-Za-z0-9_]+)"
+sortfloatpattern = r"float (\?[A-Za-z0-9_]+)"
+findpattern = r"Find (.+), assign it to (\?[A-Za-z0-9_]+)\."
+makesurepattern = r"Make sure (.+)\."
+sortpattern = r"Sort the result based on (.+) in (descending|ascending) order and keep the (.+) result\."
+finallypattern = r"Finally the answer is (\?[A-Za-z0-9_]+)\."
+existspattern = r"Find (.+), assign it to (\?[A-Za-z0-9_]+)\. If (\?[A-Za-z0-9_]+) exists, ([^.]+)\."
+
+SPARQL_TEMPLATE = """PREFIX ns: <http://rdf.freebase.com/ns/>\nSELECT DISTINCT {ansE}\nWHERE{{\n{where}\n}}\n{sort_sparql}"""
+
+# ---------------------------------------------------------------- config
+EMBED_MODEL = os.environ.get("MEMQ_EMBED_MODEL", "model/all-MiniLM-L6-v2")
+RETRIEVAL = os.environ.get("MEMQ_RETRIEVAL", "adaptive")  # adaptive (paper, default) | legacy
+GAMMA1 = float(os.environ.get("MEMQ_GAMMA1", "0.90"))   # adaptive: exact-match cutoff
+GAMMA2 = float(os.environ.get("MEMQ_GAMMA2", "0.80"))   # adaptive: multi-recall cutoff
+KEY_EXPLAIN = os.environ.get("MEMQ_KEY_EXPLAIN", "output/key_explain.json")
+# legacy reranker constants (paper-divergent, kept for the baseline)
+gamma = 0.6
+alpha = 0.9
+
+# ---------------------------------------------------------------- memory index
+with open(KEY_EXPLAIN, "r") as f:
+    _all_key = json.load(f)
+
+explain_key = {}
+for k in _all_key:
+    explain = _all_key[k]
+    if explain in explain_key:
+        if len(k.split(".\n")) == 3:
+            assert explain_key[explain]["is_tri"] is True
+        else:
+            assert explain_key[explain]["is_tri"] is False
+        explain_key[explain]["infounit"].append(k)
+    else:
+        if len(k.split(" .\n")) == 3:
+            explain_key[explain] = {"infounit": [k], "is_tri": True}
+        else:
+            explain_key[explain] = {"infounit": [k], "is_tri": False}
+
+explain_list = list(explain_key.keys())
+model = SentenceTransformer(EMBED_MODEL)
+existing_embeddings = model.encode(explain_list, convert_to_tensor=False)
+
+with open("output/All_cached_mid_names.json", "r") as f:
+    mid_names = json.load(f)
+
+
+def get_mid_by_name(name):
+    mids = [key for key, value in mid_names.items() if value == name]
+    if len(mids) == 0:
+        return [key for key, value in mid_names.items() if value.lower() == name.lower()]
+    return mids
+
+
+# ---------------------------------------------------------------- retrieval
+def common_words_similarity(explain, ref_explain):
+    words1 = explain.lower().split()
+    words2 = ref_explain.lower().split()
+    common_words = set(words1) & set(words2)
+    return len(common_words) / len(set(words1))
+
+
+def get_infounit(explain, is_tri=False):
+    query_embedding = model.encode([explain], convert_to_tensor=False)
+    distances = cdist(query_embedding, existing_embeddings, metric='cosine')[0]
+    similarities = 1 - distances
+    # restrict to the right pool (tri vs non-tri)
+    if is_tri:
+        for i, tmp_explain in enumerate(explain_list):
+            if not explain_key[tmp_explain]['is_tri']:
+                similarities[i] = 0
+    else:
+        for i, tmp_explain in enumerate(explain_list):
+            if explain_key[tmp_explain]['is_tri']:
+                similarities[i] = 0
+
+    top_indices = np.argsort(similarities)[-8:][::-1]
+
+    # tri relations: paper + legacy both take the single best
+    if is_tri:
+        return explain_key[explain_list[top_indices[0]]]["infounit"], similarities[top_indices[0]]
+
+    if RETRIEVAL == "adaptive":
+        # Paper Eq.4 adaptive recall — pure cosine, no word-overlap reranker.
+        best = similarities[top_indices[0]]
+        if best >= GAMMA1:
+            return explain_key[explain_list[top_indices[0]]]["infounit"]
+        out = []
+        for i in top_indices:
+            if similarities[i] >= GAMMA2:
+                out.extend(explain_key[explain_list[i]]["infounit"])
+        if not out:  # nothing cleared gamma2 -> fall back to top-1
+            out = list(explain_key[explain_list[top_indices[0]]]["infounit"])
+        return out
+
+    # legacy: exact-match shortcut, else common-words rerank over top-8
+    if similarities[top_indices[0]] > 0.99:
+        return explain_key[explain_list[top_indices[0]]]["infounit"]
+    for i in top_indices:
+        similarities[i] += gamma * common_words_similarity(explain, explain_list[i])
+    top_similarity_idx = np.argsort(similarities)[-8:][::-1][0]
+    top_similarity = similarities[top_similarity_idx]
+    out = []
+    for i in top_indices:
+        if similarities[i] > alpha * top_similarity:
+            out.extend(explain_key[explain_list[i]]["infounit"])
+    return out
+
+
+# ---------------------------------------------------------------- FILTER parsing
+def split_by_operators(s):
+    pattern = r' ((?:>=|<=|!=|>|<|=)) '
+    parts = re.split(pattern, s)
+    return [part for part in parts if part]
+
+
+def process_filter(f, idx=None):
+    # v9 model sometimes wraps the condition in FILTER(...) syntax
+    f = f.strip()
+    if f.startswith("FILTER(") and f.endswith(")"):
+        f = f[7:-1].strip()  # strip FILTER( ... )
+    f = f.strip()
+    f = f.replace("should not be smaller than", ">=").replace("should not be earlier than", ">=")
+    f = f.replace("should not be larger than", "<=").replace("should not be later than", "<=")
+    f = f.replace("should be smaller than", "<").replace("should be earlier than", "<")
+    f = f.replace("should be larger than", ">").replace("should be later than", ">")
+    f = f.replace("should be", "=").replace("should not be", "!=")
+    f = split_by_operators(f)
+    assert len(f) == 3, f"unable to parse filter {f}"
+    e1, op, e2 = f[0], f[1], f[2]
+    if re.fullmatch(variablepattern, e1) and re.fullmatch(variablepattern, e2):
+        return f"FILTER({e1} {op} {e2})"
+    elif re.fullmatch(variablepattern, e1) and e2 == "*NOW*":
+        return f"FILTER(xsd:datetime({e1}) {op} \"2015-08-10\"^^xsd:dateTime)"
+    elif re.fullmatch(variablepattern, e1) and re.fullmatch(midnamepattern, e2) and e2 != "*NOW*":
+        e2 = re.fullmatch(midnamepattern, e2).group(1)
+        e2mids = get_mid_by_name(e2)
+        expr = [f"{e1} {op} {mid}" for mid in e2mids]
+        if op == "=":
+            expr = " OR ".join(expr)
+        elif op == "!=":
+            expr = " AND ".join(expr)
+        else:
+            raise Exception(f"DEBUG f: {f}")
+        if len(e2mids) == 0:
+            return ""
+        return f"FILTER({expr})"
+    elif re.fullmatch(variablepattern, e1) and re.fullmatch(filterfloatpattern, e2):
+        e2 = re.fullmatch(filterfloatpattern, e2).group(1)
+        return f"FILTER(xsd:float({e1}) {op} {e2}^^xsd:float)"
+    elif re.fullmatch(variablepattern, e1) and re.fullmatch(filterstrpattern, e2):
+        e2 = re.fullmatch(filterstrpattern, e2).group(1)
+        return f"FILTER(str({e1}) {op} {e2})"
+    elif re.fullmatch(variablepattern, e1) and re.fullmatch(filterdatetimepattern, e2):
+        e2 = re.fullmatch(filterdatetimepattern, e2).group(1)
+        return f"FILTER(xsd:datetime({e1}) {op} \"{e2}\"^^xsd:dateTime)"
+    #  v9 model emits xsd:dateTime literals in Make sure steps: "YYYY"^^xsd:dateTime etc.
+    elif re.fullmatch(variablepattern, e1) and re.fullmatch(r'"(\d{4}(?:-\d{2}(?:-\d{2})?)?)"\^\^xsd:dateTime', e2):
+        e2val = re.fullmatch(r'"(\d{4}(?:-\d{2}(?:-\d{2})?)?)"\^\^xsd:dateTime', e2).group(1)
+        # normalize partial dates to the start of the period
+        if "-" not in e2val:        # YYYY -> YYYY-01-01
+            e2val = f"{e2val}-01-01"
+        elif e2val.count("-") == 1:  # YYYY-MM -> YYYY-MM-01
+            e2val = f"{e2val}-01"
+        # else YYYY-MM-DD -> as-is
+        if op == "=":
+            parts = e2val.split("-")
+            y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+            if m == 12:
+                end = f"{y+1}-01-01"
+            else:
+                end = f"{y}-{m+1:02d}-01"
+            return f"FILTER(xsd:datetime({e1}) >= \"{e2val}\"^^xsd:dateTime && xsd:datetime({e1}) < \"{end}\"^^xsd:dateTime)"
+        else:
+            return f"FILTER(xsd:datetime({e1}) {op} \"{e2val}\"^^xsd:dateTime)"
+    elif re.fullmatch(variablepattern, e1) and re.fullmatch(integer_pattern, e2):
+        return f"FILTER(xsd:integer({e1}) {op} \"{e2}\"^^xsd:integer)"
+    # v9 model sometimes emits literal SPARQL expressions that split_by_operators
+    # awkwardly destructures. When the parts look like SPARQL already (xsd: cast,
+    # variable-var comparison, arithmetic), just reconstruct and wrap.
+    elif ((re.fullmatch(r'xsd:\w+\(\s*\?\w+\s*\)', e1) and (re.fullmatch(variablepattern, e2) or re.fullmatch(r'[-+]?\d+', e2)))
+          or (re.fullmatch(variablepattern, e1) and re.fullmatch(r'xsd:\w+\(\s*\?\w+\s*\)', e2))
+          or any(op in str(f) for op in (" + ", " - "))):
+        return f"FILTER({e1} {op} {e2})"
+    else:
+        raise Exception(f"{idx} ## Filter DEBUG f: {f}")
+
+
+# ---------------------------------------------------------------- FIND step -> triples
+def process_find(e_new, explain, G, cvt_node_cnt, seen_type2, main_entity, idx=None):
+    assert re.fullmatch(variablepattern, e_new), e_new
+    all_entities = re.findall(r"(\*.+\*)", explain)
+    all_variables = re.findall(variablepattern, explain)
+    related_nodes = list(all_entities) + list(all_variables)
+
+    if len(related_nodes) == 1:
+        tmp = explain.replace(related_nodes[0], "?entity1")
+        tmp = "?entity2 is " + tmp
+        if re.fullmatch(midnamepattern, related_nodes[0]):
+            all_e1_mid = get_mid_by_name(related_nodes[0][1:-1])
+            if len(all_e1_mid) != 1:
+                if main_entity in all_e1_mid:
+                    e1 = main_entity
+                else:
+                    raise Exception(f"{idx}: more than 1 matched e1 for {related_nodes[0][1:-1]}")
+            else:
+                e1 = all_e1_mid[0]
+        elif re.fullmatch(variablepattern, related_nodes[0]):
+            e1 = related_nodes[0]
+        else:
+            raise Exception(f"{idx}: not expected e1 {related_nodes[0]}")
+
+        infounit = get_infounit(tmp, is_tri=False)
+        return_infounit = []
+        for iu in infounit:
+            if len(iu.split(" .\n")) == 2:
+                seen_type2[(e_new, e1)] = f"?cvt_{cvt_node_cnt}"
+                tmp_iu_sparql = iu.replace("?entity2", e_new).replace("?entity1", e1).replace("?cvt", f"?cvt_{cvt_node_cnt}")
+                return_infounit.append(tmp_iu_sparql)
+                G.add_edge(e1, f"?cvt_{cvt_node_cnt}", relation="")
+                G.add_edge(f"?cvt_{cvt_node_cnt}", e_new, relation=tmp_iu_sparql)
+                cvt_node_cnt += 1
+            else:
+                tmp_iu_sparql = iu.replace("?entity2", e_new).replace("?entity1", e1)
+                return_infounit.append(tmp_iu_sparql)
+                G.add_edge(e1, e_new, relation=tmp_iu_sparql)
+        return G, cvt_node_cnt, seen_type2, return_infounit
+
+    elif len(related_nodes) == 2:
+        tmp1 = explain.replace(related_nodes[0], "?entity1").replace(related_nodes[1], "?entity2")
+        tmp1 = "?entity3 is " + tmp1
+        infounit1, sim1 = get_infounit(tmp1, is_tri=True)
+        tmp2 = explain.replace(related_nodes[0], "?entity2").replace(related_nodes[1], "?entity1")
+        tmp2 = "?entity3 is " + tmp2
+        infounit2, sim2 = get_infounit(tmp2, is_tri=True)
+        infounit = infounit1 if sim1 > sim2 else infounit2
+        if re.fullmatch(variablepattern, related_nodes[0]):
+            e1 = related_nodes[0]
+        elif re.fullmatch(midnamepattern, related_nodes[0]):
+            all_e1_mid = get_mid_by_name(related_nodes[0][1:-1])
+            if len(all_e1_mid) != 1:
+                if main_entity in all_e1_mid:
+                    e1 = main_entity
+                else:
+                    raise Exception(f"{idx}: more than 1 matched e1 for {related_nodes[0][1:-1]}")
+            else:
+                e1 = all_e1_mid[0]
+        else:
+            raise Exception(f"{idx} not implement type3 infounit")
+
+        if re.fullmatch(variablepattern, related_nodes[1]):
+            e2 = related_nodes[1]
+        elif re.fullmatch(midnamepattern, related_nodes[1]):
+            all_e1_mid = get_mid_by_name(related_nodes[1][1:-1])
+            if len(all_e1_mid) != 1:
+                raise Exception(f"{idx}: more than 1 matched e1 for {related_nodes[1][1:-1]}")
+            else:
+                e1 = all_e1_mid[0]
+        else:
+            raise Exception(f"{idx} not implement type3 infounit")
+
+        if (e1, e2) in seen_type2:
+            cvtnode = seen_type2[(e1, e2)]
+        elif (e2, e1) in seen_type2:
+            cvtnode = seen_type2[(e2, e1)]
+        else:
+            return G, cvt_node_cnt, seen_type2, []
+        tmp_iu_sparql = infounit[0].split(" .\n")[-1].replace("?cvt", cvtnode).replace("?entity3", e_new)
+        return_infounit = [tmp_iu_sparql]
+        G.add_edge(cvtnode, e_new, relation=tmp_iu_sparql)
+        return G, cvt_node_cnt, seen_type2, return_infounit
+    else:
+        raise Exception(f"{idx}: more than 2 nodes error")
+
+
+# ---------------------------------------------------------------- plan -> SPARQL (DB-free)
+def build_reconstruction(d):
+    """Parse d['test_plan'] into reconstructed SPARQL strings. Pure string/graph
+    work — no Freebase calls. Returns a dict; raises on a malformed plan."""
+    main_entity = d["main_path"][0] if "main_path" in d else d["BegE"]
+    cvt_node_cnt = 0
+    plan = d['test_plan']
+    plan = re.compile(r'(\?[A-Za-z0-9_]+)').sub(r' \1', plan)  # llama3: space before vars
+    steps = plan.split("\n")
+
+    sort_sparql = ""
+    ansE = ""
+    all_step_sparql = []
+    seen_type2 = {}
+    G = nx.DiGraph()
+    for s in steps:
+        step = re.sub(r'Step\d+:\s*', '', s)
+        findmatch = re.fullmatch(findpattern, step)
+        makesurematch = re.fullmatch(makesurepattern, step)
+        sortmatch = re.fullmatch(sortpattern, step)
+        finallymatch = re.fullmatch(finallypattern, step)
+        existsmatch = re.fullmatch(existspattern, step)
+        if findmatch:
+            e_new = findmatch.group(2)
+            explain = findmatch.group(1)
+            G, cvt_node_cnt, seen_type2, return_infounit = process_find(e_new, explain, G, cvt_node_cnt, seen_type2, main_entity)
+            if len(return_infounit) == 1:
+                all_step_sparql.append(return_infounit[0])
+            else:
+                tmp = ["{ " + x + " }" for x in return_infounit]
+                all_step_sparql.append("UNION".join(tmp))
+        elif makesurematch:
+            f = makesurematch.group(1)
+            filt = process_filter(f)
+            if filt != "":
+                all_step_sparql.append(filt)
+        elif sortmatch:
+            order = "DESC" if sortmatch.group(2) == "descending" else "ASC"
+            var = sortmatch.group(1)
+            if re.fullmatch(variablepattern, var):
+                sort_sparql = f"ORDER BY {order}({var})\n"
+            elif re.fullmatch(sortdatetimepattern, var):
+                var = re.fullmatch(sortdatetimepattern, var).group(1)
+                sort_sparql = f"ORDER BY {order}(xsd:datetime({var}))\n"
+            elif re.fullmatch(sortintegerpattern, var):
+                var = re.fullmatch(sortintegerpattern, var).group(1)
+                sort_sparql = f"ORDER BY {order}(xsd:float({var}))\n"
+            elif re.fullmatch(sortfloatpattern, var):
+                var = re.fullmatch(sortfloatpattern, var).group(1)
+                sort_sparql = f"ORDER BY {order}(xsd:float({var}))\n"
+            else:
+                raise Exception(f"Sort DEBUG var: {var}")
+            sortlen = sortmatch.group(3)
+            if sortlen == "first":
+                sort_sparql += "LIMIT 1"
+            elif sortlen == "second":
+                sort_sparql += "LIMIT 1\nOFFSET 1"
+            else:
+                raise Exception(f"Sort DEBUG sortlen: {sortlen}")
+        elif finallymatch:
+            ansE = finallymatch.group(1)
+            all_step_sparql.append(f"FILTER (!isLiteral({ansE}) OR lang({ansE}) = '' OR langMatches(lang({ansE}), 'en'))")
+        elif existsmatch:
+            assert existsmatch.group(2) == existsmatch.group(3)
+            e_new = existsmatch.group(2)
+            explain = existsmatch.group(1)
+            G, cvt_node_cnt, seen_type2, return_infounit = process_find(e_new, explain, G, cvt_node_cnt, seen_type2, main_entity)
+            if len(return_infounit) > 0:
+                exist_filter = process_filter(existsmatch.group(4))
+                exist_search = return_infounit[0]
+                all_step_sparql.append(f"FILTER(NOT EXISTS {{ {exist_search} }} || EXISTS {{ {exist_search} .{exist_filter} }})")
+        else:
+            raise Exception(f"not match {s}")
+
+    where = " .\n".join(all_step_sparql)
+    primary = SPARQL_TEMPLATE.format(ansE=ansE, where=where, sort_sparql=sort_sparql)
+
+    # fallback 1: drop all FILTERs (degradation in original reconstruct.py)
+    steps1 = [x for x in all_step_sparql if "FILTER" not in x]
+    steps1.append(f"FILTER({ansE} != {main_entity})")
+    fb1 = SPARQL_TEMPLATE.format(ansE=ansE, where=" .\n".join(steps1), sort_sparql="")
+
+    # fallback 2: keep only the longest main path through the graph
+    fb2 = None
+    try:
+        UG = nx.Graph(G)
+        paths = list(nx.all_simple_paths(UG, source=main_entity, target=ansE))
+        if paths:
+            longest = max(paths, key=len)
+            steps2 = []
+            for i in range(len(longest) - 1):
+                u, v = longest[i], longest[i + 1]
+                ea = G.get_edge_data(u, v) or G.get_edge_data(v, u)
+                if ea and ea['relation'] != "":
+                    steps2.append(ea['relation'])
+            fb2 = SPARQL_TEMPLATE.format(ansE=ansE, where=" .\n".join(steps2), sort_sparql="")
+    except Exception:
+        fb2 = None
+
+    return {
+        "reconstruct_sparql": primary,
+        "reconstruct_sparql1": fb1,
+        "reconstruct_sparql2": fb2,
+        "ansE": ansE,
+        "main_entity": main_entity,
+    }
+
+
+# ---------------------------------------------------------------- structure accuracy (DB-free)
+_REL_RE = re.compile(r'ns:[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+')
+
+
+def _relation_multiset(sparql):
+    """Bag of ns: relation IRIs in a query, ignoring the type/name guard rels."""
+    rels = _REL_RE.findall(sparql or "")
+    return sorted(r for r in rels if r not in ("ns:type.object.name", "ns:type.object.type"))
+
+
+def structure_accuracy(reconstruct_sparql, ori_sparql):
+    """1 if the reconstructed query uses exactly the same multiset of relation
+    predicates as the gold query (hop pattern), else 0. DB-free proxy for the
+    paper's structural-correctness signal — directly catches a single-hop
+    relation being wrongly reconstructed as a two-hop CVT path."""
+    return 1 if _relation_multiset(reconstruct_sparql) == _relation_multiset(ori_sparql) else 0
+
+
+# ---------------------------------------------------------------- answer-set metrics
+def eval_result(true_list, pred_list):
+    true_set, pred_set = set(true_list), set(pred_list)
+    inter = true_set & pred_set
+    precision = len(inter) / len(pred_set) if pred_set else 0.0
+    recall = len(inter) / len(true_set) if true_set else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+    hit_at_1 = 1 if (len(pred_list) > 0 and pred_list[0] in true_set) else 0
+    return precision, recall, f1, hit_at_1

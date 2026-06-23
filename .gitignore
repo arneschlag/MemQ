@@ -6,3 +6,9 @@ TRAINING_SUMMARY.md
 *.pyc
 cwq_dataset/*
 webqsp/*
+.venv311
+model/
+*.bak
+Commented Evaluation of KGQA Related-Work Notes for the MemQ Seminar Paper.pdf
+background.png
+ollama.png

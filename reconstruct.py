@@ -314,17 +314,17 @@ def process_find(e_new, explain, G, cvt_node_cnt, seen_type2, main_entity, idx=N
 SPARQL_TEMPLATE = """PREFIX ns: <http://rdf.freebase.com/ns/>\nSELECT DISTINCT {ansE}\nWHERE{{\n{where}\n}}\n{sort_sparql}"""
 
 
-# with open("output/webqsp_test_plan_llama3.json", "r") as f:
-#     testdata = json.load(f)
+# Process both datasets. Set DS to "webqsp" or "cwq" to run one at a time,
+# or use the environment variable MEMQ_DS.
+import os
+DS = os.environ.get("MEMQ_DS", "webqsp")
 
-# with open("output/cwq_test_plan_llama3.json", "r") as f:
-#     testdata = json.load(f)
-
-with open("output/webqsp_test_plan_llama2.json", "r") as f:
-    testdata = json.load(f)
-
-# with open("output/cwq_test_plan_llama2.json", "r") as f:
-#     testdata = json.load(f)
+if DS == "cwq":
+    with open("output/cwq_test_plan_v10.json", "r") as f:
+        testdata = json.load(f)
+else:
+    with open("output/webqsp_test_plan_v10.json", "r") as f:
+        testdata = json.load(f)
 
 not_evaluable_cnt = 0
 exception_idx = []
@@ -350,9 +350,9 @@ for idx, d in enumerate(testdata):
         cvt_node_cnt = 0
         plan = d['test_plan']
 
-        # llama3需要添加空格
-        # pattern = re.compile(r'(\?[A-Za-z0-9_]+)')
-        # plan = pattern.sub(r' \1', plan)
+        # llama3 needs spaces before variables for regex matching
+        pattern = re.compile(r'(\?[A-Za-z0-9_]+)')
+        plan = pattern.sub(r' \1', plan)
 
         steps = plan.split("\n")
         sort_sparql = ""
@@ -539,15 +539,9 @@ print(f"hit@1 = {avg_hit_at_1}")
 print(f"f1 = {f1}")
 
 
-# with open("output/webqsp_test_reconstruct_llama2.json","w") as f:
+# with open(f"output/{DS}_test_reconstruct_v10.json","w") as f:
 #     json.dump(testdata,f)
 
-# with open("output/cwq_test_reconstruct_llama2.json","w") as f:
-#     json.dump(testdata,f)
-
-# with open("output/webqsp_test_reconstruct_llama3.json","w") as f:
-#     json.dump(testdata,f)
-
-# with open("output/cwq_test_reconstruct_llama3.json","w") as f:
-#     json.dump(testdata,f)
+with open(f"output/{DS}_test_reconstruct_v10.json","w") as f:
+    json.dump(testdata,f)
 
