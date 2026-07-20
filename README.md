@@ -66,6 +66,17 @@ The resulting `output/*_test_lookup_public_v9.json` files contain reconstructed
 SPARQL and database-free metrics. The original reported answer-level scores
 require a local Freebase/Virtuoso service, described below.
 
+### Reproduction scope
+
+The public plans, memory, and current reconstruction code reproduce a complete
+fresh lookup-and-score run. They do **not** currently regenerate the historical
+best `v9_dirfb` rows in [RESULTS.md](RESULTS.md): the repository contains the
+recorded metrics but no executable `dirfb` retrieval/reconstruction mode or its
+frozen reconstructed-query artifacts. Treat those rows as archived experiment
+results until that missing configuration or artifact is released. The regular
+public path is still useful for validating installation and for comparing future
+changes under one explicit configuration.
+
 To additionally calculate the experimental EHR/GoldGED diagnostics (slower),
 set `MEMQ_GRAPH_METRICS=1` before running `reconstruct_lookup.py`.
 
