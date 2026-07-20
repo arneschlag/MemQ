@@ -40,6 +40,7 @@ findpattern = r"Find (.+), assign it to (\?[A-Za-z0-9_]+)\."
 makesurepattern = r"Make sure (.+)\."
 sortpattern = r"Sort the result based on (.+) in (descending|ascending) order and keep the (.+) result\."
 finallypattern = r"Finally the answer is (\?[A-Za-z0-9_]+)\."
+countpattern = r"Count the number of (\?[A-Za-z0-9_]+)\."  # GrailQA aggregation
 existspattern = r"Find (.+), assign it to (\?[A-Za-z0-9_]+)\. If (\?[A-Za-z0-9_]+) exists, ([^.]+)\."
 
 SPARQL_TEMPLATE = """PREFIX ns: <http://rdf.freebase.com/ns/>\nSELECT DISTINCT {ansE}\nWHERE{{\n{where}\n}}\n{sort_sparql}"""
@@ -351,6 +352,7 @@ def build_reconstruction(d):
 
     sort_sparql = ""
     ansE = ""
+    is_count = False
     all_step_sparql = []
     seen_type2 = {}
     G = nx.DiGraph()
@@ -361,6 +363,7 @@ def build_reconstruction(d):
         sortmatch = re.fullmatch(sortpattern, step)
         finallymatch = re.fullmatch(finallypattern, step)
         existsmatch = re.fullmatch(existspattern, step)
+        countmatch = re.fullmatch(countpattern, step)
         if findmatch:
             e_new = findmatch.group(2)
             explain = findmatch.group(1)
@@ -398,6 +401,8 @@ def build_reconstruction(d):
                 sort_sparql += "LIMIT 1\nOFFSET 1"
             else:
                 raise Exception(f"Sort DEBUG sortlen: {sortlen}")
+        elif countmatch:
+            is_count = True
         elif finallymatch:
             ansE = finallymatch.group(1)
             all_step_sparql.append(f"FILTER (!isLiteral({ansE}) OR lang({ansE}) = '' OR langMatches(lang({ansE}), 'en'))")
@@ -414,12 +419,15 @@ def build_reconstruction(d):
             raise Exception(f"not match {s}")
 
     where = " .\n".join(all_step_sparql)
-    primary = SPARQL_TEMPLATE.format(ansE=ansE, where=where, sort_sparql=sort_sparql)
+    # GrailQA COUNT: project the aggregate as ?value; the WHERE still binds ansE.
+    proj = f"(COUNT(DISTINCT {ansE}) AS ?value)" if is_count else ansE
+    out_ansE = "?value" if is_count else ansE
+    primary = SPARQL_TEMPLATE.format(ansE=proj, where=where, sort_sparql=sort_sparql)
 
     # fallback 1: drop all FILTERs (degradation in original reconstruct.py)
     steps1 = [x for x in all_step_sparql if "FILTER" not in x]
     steps1.append(f"FILTER({ansE} != {main_entity})")
-    fb1 = SPARQL_TEMPLATE.format(ansE=ansE, where=" .\n".join(steps1), sort_sparql="")
+    fb1 = SPARQL_TEMPLATE.format(ansE=proj, where=" .\n".join(steps1), sort_sparql="")
 
     # fallback 2: keep only the longest main path through the graph
     fb2 = None
@@ -434,7 +442,7 @@ def build_reconstruction(d):
                 ea = G.get_edge_data(u, v) or G.get_edge_data(v, u)
                 if ea and ea['relation'] != "":
                     steps2.append(ea['relation'])
-            fb2 = SPARQL_TEMPLATE.format(ansE=ansE, where=" .\n".join(steps2), sort_sparql="")
+            fb2 = SPARQL_TEMPLATE.format(ansE=proj, where=" .\n".join(steps2), sort_sparql="")
     except Exception:
         fb2 = None
 
@@ -442,14 +450,14 @@ def build_reconstruction(d):
     # it separate from the primary query so modern runs remain unchanged unless
     # score_answers.py is called with MEMQ_DIRFB=1.
     steps3 = [_both_directions(step) for step in all_step_sparql]
-    fb3 = SPARQL_TEMPLATE.format(ansE=ansE, where=" .\n".join(steps3), sort_sparql=sort_sparql)
+    fb3 = SPARQL_TEMPLATE.format(ansE=proj, where=" .\n".join(steps3), sort_sparql=sort_sparql)
 
     return {
         "reconstruct_sparql": primary,
         "reconstruct_sparql1": fb1,
         "reconstruct_sparql2": fb2,
         "reconstruct_sparql3": fb3,
-        "ansE": ansE,
+        "ansE": out_ansE,
         "main_entity": main_entity,
     }
 

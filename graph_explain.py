@@ -216,6 +216,14 @@ def _explain_filter(filter, id=None):
         else:
             raise Exception(f"{id}: not implement FILTER explain {filter}, {e1} {r} {e2}") 
     
+    elif re.fullmatch(variable2float_pattern, e1)!= None and ("^^<http://www.w3.org/2001/XMLSchema#float>" in e2 or "^^xsd:float" in e2):
+        # GrailQA float comparison: xsd:float(?x) >= "7.0"^^<...#float>
+        if r in ["<", ">", "<=", ">="]:
+            e1_var = re.findall(variable_pattern, e1)[0]
+            e2_num = e2.split('^^')[0][1:-1]
+            return [f"{e1_var} should {number_relation_explain[r]} a float \"{e2_num}\""]
+        else:
+            raise Exception(f"{id}: not implement FILTER explain {filter}, {e1} {r} {e2}")
     elif re.fullmatch(variable2datetime_pattern, e1)!= None and "^^xsd:dateTime" in e2:
         # xsd:datetime(?sk1) <= "2015-08-10"^^xsd:dateTime
         e1_var = re.findall(variable_pattern, e1)[0]
@@ -387,6 +395,11 @@ for d in tqdm(data):
         else:
             raise Exception(f"{d['id']}: not implement order {d['order']}")
     
+    # GrailQA aggregation: a COUNT over the answer set. Emitted as an explicit
+    # reasoning step so the reconstructor wraps SELECT (COUNT(DISTINCT ?x) ...).
+    if d.get('aggregation') == 'count':
+        sparql_explain.append(f"Count the number of {d['AnsE']}")
+
     d['all_sparql_explain'] = sparql_explain
     final_explain = ""
     for step_cnt, exp in enumerate(sparql_explain):

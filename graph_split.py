@@ -76,16 +76,23 @@ def get_key(all_rel, nodes):
 merge_data = []
 all_key = {"1":[],"2":[],"3":[]}
 
-with open("output/webqsp_train_cvt_list.json","r") as f:
-    webqspdata = json.load(f)
-with open("output/cwq_train_cvt_list.json","r") as f:
-    cwqdata = json.load(f)
-
-for d in webqspdata:
-    merge_data.append(d)
-
-for d in cwqdata:
-    merge_data.append(d)
+# Datasets that contribute statement templates to the shared memory. The base
+# reproduction uses WebQSP+CWQ; the joint v14 corpus additionally folds in
+# GrailQA when its cvt_list file is present (built offline, Freebase-free).
+import os as _os
+_split_datasets = _os.environ.get("MEMQ_SPLIT_DATASETS", "webqsp,cwq,grailqa").split(",")
+for _ds in _split_datasets:
+    _ds = _ds.strip()
+    if not _ds:
+        continue
+    _path = f"output/{_ds}_train_cvt_list.json"
+    if not _os.path.exists(_path):
+        if _ds == "grailqa":
+            continue  # optional: only present for the joint v14 build
+        raise FileNotFoundError(_path)
+    with open(_path, "r") as f:
+        for d in json.load(f):
+            merge_data.append(d)
 
 for d in merge_data:
     if d['cvt_list'] == None:

@@ -1,4 +1,9 @@
 import json
+import os
+
+# Output filename is configurable so the joint v14 corpus does not clobber the
+# v9 fine-tune data. Default keeps the historical path.
+OUTPUT_PATH = os.environ.get("MEMQ_FINETUNE_OUT", "output/memq_finetune_data.json")
 
 INPUT_TEMPLATE = """You are given a problem to solve step by step. Each step should begin with either "Find", "Make sure" or "Rank". Finally, you need to output which one is the final answer. The steps should logically follow from one another, where each step builds on the outcome of the previous steps. 
 Each step should be simple, clear, and directly related to achieving the overall goal. Some topic entities you can use to start the plan are provided below.
@@ -29,6 +34,6 @@ for d in data:
     target = d['sparql_explain']
     finetune_data.append({"instruction": source,"input":"","output": target})
 
-with open("output/memq_finetune_data.json","w") as f:
+with open(OUTPUT_PATH,"w") as f:
     json.dump(finetune_data,f)
-print(len(finetune_data))
+print(f"{len(finetune_data)} samples -> {OUTPUT_PATH}")

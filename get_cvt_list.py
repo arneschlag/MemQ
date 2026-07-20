@@ -173,6 +173,58 @@ def process_dataset(dataset_name):
     return train_graph
 
 
+def process_grailqa_offline(dataset_name="grailqa"):
+    """Deterministic, Freebase-free CVT detection for GrailQA.
+
+    GrailQA nodes carry explicit Freebase types but no per-instance data locally,
+    so the live name-existence probe used for WebQSP/CWQ is unavailable. Because
+    CVT status only affects how relations are grouped/phrased in memory (a
+    mediator becomes an existential ``?cvt`` variable either way, so answers are
+    unchanged), we use a structural rule:
+
+      A variable node is a CVT iff it is an intermediate mediator — degree >= 2,
+      not the answer node, not an entity/type IRI, and its father is not already
+      a CVT (no chained CVTs, which graph_split forbids). Leaf value nodes
+      (literals / order / comparison targets) are degree 1 -> non-CVT.
+    """
+    input_file = f"output/{dataset_name}_train_graph.json"
+    output_file = f"output/{dataset_name}_train_cvt_list.json"
+    with open(input_file, "r") as f:
+        train_graph = json.load(f)
+
+    n_cvt = 0
+    for d in train_graph:
+        G = nx.Graph(d["G"])
+        all_rel = d["all_rel"]
+        ans = d.get("AnsE", "?x")
+        cvt_list = {}
+        for node in d["nodeorder"]:
+            if "ns:" in node:
+                cvt_list[node] = False
+        for node in d["nodeorder"]:
+            if "ns:" in node:
+                continue
+            father = all_rel.get(node, {}).get("father")
+            is_cvt = (
+                node != ans
+                and node in G
+                and G.degree(node) >= 2
+                and not (father and cvt_list.get(father, False))
+            )
+            cvt_list[node] = bool(is_cvt)
+            n_cvt += bool(is_cvt)
+        d["cvt_list"] = cvt_list
+
+    with open(output_file, "w") as f:
+        json.dump(train_graph, f)
+    print(f"{dataset_name}: {len(train_graph)} records, {n_cvt} CVT nodes -> {output_file}")
+    return train_graph
+
+
 if __name__ == "__main__":
-    process_dataset("webqsp")
-    process_dataset("cwq")
+    import sys
+    if "grailqa" in sys.argv:
+        process_grailqa_offline("grailqa")
+    else:
+        process_dataset("webqsp")
+        process_dataset("cwq")
