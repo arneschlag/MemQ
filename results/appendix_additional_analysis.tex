@@ -1,0 +1,174 @@
+% Copy figures/memq_v9_paper_comparison_weighted.png to the report's images/
+% directory before including this file after \appendix.
+
+\section{Additional Analysis: Reproduction Fidelity and Zero-Shot Transfer}
+\label{app:additional-analysis}
+
+This appendix extends the reproduction experiments in Section~5 in two ways.
+First, it separates the results reported in the original MemQ paper from the
+results obtained by the reproduced v9 pipeline. Second, it evaluates whether
+the fixed v9 model can transfer to GrailQA without any additional fine-tuning.
+This distinction is important because a valid natural-language plan does not
+necessarily imply that the memory module retrieves the correct Freebase
+relations or reconstructs the correct executable query.
+
+\subsection{Experimental Protocol}
+\label{app:additional-protocol}
+
+All additional experiments use the existing v9 planning model and the
+direction fallback described in Section~5. No model parameters were updated.
+WebQSP and CWQ are evaluated on the same test splits and local Freebase
+snapshot as the main reproduction. For GrailQA, we use the labelled v1.0
+development split \cite{guIIDThreeLevels2021}, because the official test
+answers are not public. As in the original MemQ setting, the topic entity is
+assumed to be known. The model input contains only the natural-language
+question and the supplied topic-entity label. Gold relations, graph edges, and
+answers are not included in the planning prompt.
+
+The fixed v9 plan language cannot represent every GrailQA operator. We
+therefore evaluate the largest directly compatible subset rather than silently
+converting unsupported questions into ordinary path queries. Of 6,763
+development examples, 4,970 (73.5\%) are retained. We exclude 1,251 examples
+(18.5\%) that require functions such as counting, extrema, or comparisons, and
+542 examples (8.0\%) containing literal constraints. Consequently, the
+reported GrailQA result is a zero-shot transfer diagnostic on a supported
+subset, not an official GrailQA leaderboard score. GrailQA++ is supported by
+the same adapter, but no score is reported because an official labelled data
+release was not available at the time of the experiment
+\cite{duttGrailQAChallengingZeroShot2023}.
+
+\subsection{Aggregation and Comparability}
+\label{app:additional-aggregation}
+
+The answer metrics use the same denominators as the executable-query
+evaluation: 1,626 WebQSP questions, 3,273 CWQ questions, and all 4,970 retained
+GrailQA questions. Graph metrics are computed for every successfully
+reconstructed lookup item, yielding 1,635, 3,526, and 4,782 examples,
+respectively. For a metric $m$ and hop groups $h$, the reported overall value
+is weighted by the number of examples $n_h$ in each group:
+
+\begin{equation}
+    \overline{m}
+    = \frac{\sum_h n_h\,\overline{m}_h}{\sum_h n_h}.
+    \label{eq:weighted-hop-average}
+\end{equation}
+
+An unweighted mean over hop-level means would give a distorted result because
+rare high-hop groups would receive the same influence as the much larger
+one-hop group. For example, unweighted averaging of the seven populated
+WebQSP Hits@1 hop bins gives 0.658, whereas the correct example-weighted value
+is 0.822.
+
+The graph-level comparison requires an additional qualification. The MemQ
+paper reports EHR and GoldGED by hop in its Table~2, but it does not state
+whether these values are computed on WebQSP, CWQ, or a combined sample
+\cite{xuMemoryaugmentedQueryReconstruction2025}. Moreover, the original graph
+matching implementation was not released. Our implementation normalizes
+generated variable names before comparing relation-bearing edges and should
+therefore be interpreted as a documented approximation rather than a bit-exact
+reproduction of the paper's graph metrics. The paper values are reproduced in
+Figure~\ref{fig:additional-paper-comparison} as reference rows, without
+assigning them to either dataset.
+
+\subsection{Aggregate Results}
+\label{app:additional-results}
+
+Table~\ref{tab:additional-aggregate-results} reports the aggregate results.
+The original paper contains two relevant configurations. Its main comparison
+in Table~1 reports 0.841/0.858 Hits@1/Macro-F1 on WebQSP and 0.803/0.830 on
+CWQ. A separate analytical configuration in Table~3 reports slightly higher
+values (0.857/0.872 and 0.817/0.845, respectively). These rows should not be
+mixed when defining a single paper target. We use the main Table~1 values for
+the direct comparison below.
+
+\begin{table}[t]
+    \centering
+    \small
+    \caption{Paper results and reproduced v9 results. EHR and GoldGED are
+    reported only for the reproduction because the paper's hop-wise Table~2
+    does not identify a dataset-specific aggregation.}
+    \label{tab:additional-aggregate-results}
+    \begin{tabular}{llrrrr}
+        \toprule
+        Dataset & Run & Hits@1 $\uparrow$ & Macro-F1 $\uparrow$
+                & EHR $\uparrow$ & GoldGED $\downarrow$ \\
+        \midrule
+        WebQSP & Paper, Table 1 & 0.841 & 0.858 & -- & -- \\
+               & Reproduced v9  & 0.822 & 0.823 & 0.502 & 1.783 \\
+        \addlinespace
+        CWQ    & Paper, Table 1 & 0.803 & 0.830 & -- & -- \\
+               & Reproduced v9  & 0.723 & 0.738 & 0.497 & 2.648 \\
+        \addlinespace
+        GrailQA & v9 zero-shot, supported dev subset
+               & 0.018 & 0.018 & 0.008 & 3.434 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The WebQSP reproduction remains close to the paper on Hits@1 but is 3.5
+percentage points lower in Macro-F1. The gap on CWQ is substantially larger:
+8.0 points in Hits@1 and 9.2 points in Macro-F1. This agrees with the main
+reproduction analysis: longer compositional queries, filters, entity binding,
+and variable direction are more consequential on CWQ than on WebQSP. Hits@1
+also depends on the first result returned by a \texttt{SELECT DISTINCT} query;
+because SPARQL does not define an order without \texttt{ORDER BY}, this metric
+can vary slightly across compatible Virtuoso deployments. Macro-F1 compares
+answer sets and is therefore the more stable reproduction measure.
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=\textwidth]
+        {images/memq_v9_paper_comparison_weighted.png}
+    \caption{Original MemQ paper values and the v9 reproduction by total hop
+    count. Paper Table~2 provides hop-wise EHR and GoldGED but does not identify
+    a dataset-specific aggregation. Paper Table~1 provides only dataset-level
+    answer metrics. Reproduction averages are weighted over examples according
+    to Equation~\ref{eq:weighted-hop-average}.}
+    \label{fig:additional-paper-comparison}
+\end{figure*}
+
+\subsection{What the GrailQA Transfer Test Reveals}
+\label{app:additional-grailqa-analysis}
+
+The planning model generated a syntactically valid \texttt{Step1}-style plan
+for all 4,970 retained GrailQA examples. Nevertheless, only 15 reconstructed
+queries exactly matched the gold relation multiset, corresponding to a
+structure accuracy of 0.003. EHR falls to 0.008, Hits@1 to 0.018, and Macro-F1
+to 0.018. Performance also declines with depth: Macro-F1 is 0.020 for one-hop,
+0.014 for two-hop, 0.005 for three-hop, and zero for the retained four-hop
+examples.
+
+This result separates two capabilities that can otherwise be conflated.
+Fine-tuning teaches v9 to emit plans with the expected surface grammar, which
+explains the 100\% plan-format validity. It does not provide a general mapping
+from arbitrary natural-language relations to Freebase predicates. Query
+reconstruction still depends on nearest-neighbour retrieval from a memory
+constructed from WebQSP and CWQ relations. On GrailQA, a fluent plan can
+therefore retrieve a semantically adjacent but graphically incorrect memory
+entry. The very low one-hop EHR shows that the failure is not explained only by
+longer reasoning chains; relation coverage and alignment of the plan language
+with the memory embedding space already fail at the first edge.
+
+The supported-subset design makes this conclusion stronger, not weaker. The
+evaluation removes functions and literal constraints that v9 cannot express,
+thereby favouring the model's existing path-query vocabulary. Despite this
+advantage, transfer remains near zero. The result suggests that MemQ's strong
+in-domain performance is based primarily on reuse of a closed relation memory,
+not on dataset-independent query planning. Extending the method to a new
+benchmark consequently requires at least rebuilding or expanding the query
+memory, even if retraining the planning model is prohibited.
+
+\subsection{Threats to Validity}
+\label{app:additional-validity}
+
+Four limitations constrain the interpretation of these results. First, the
+local Freebase snapshot may differ from the snapshot used by the authors,
+affecting query coverage and answer sets. Second, unordered SPARQL results make
+Hits@1 partly endpoint-dependent. Third, the GrailQA number covers only the
+73.5\% subset expressible by v9 and must not be presented as a full benchmark
+score. Fourth, EHR and GoldGED are based on our documented graph-matching
+approximation, while the paper's exact matching code and the dataset
+aggregation behind Table~2 are unavailable. These limitations do not affect
+the central qualitative observation: valid natural-language plans alone are
+insufficient for zero-shot transfer when the query memory does not cover the
+target relation distribution.

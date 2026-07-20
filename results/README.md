@@ -8,6 +8,10 @@ zero-shot v9 + direction-fallback evaluation run from 2026-07-20.
 avoids stale caches of the earlier plot whose `avg` column incorrectly used an
 unweighted mean over hop bins.
 
+`appendix_additional_analysis.tex` is a polished, copy-ready appendix section
+for the seminar report. Copy the weighted comparison PNG to the report's
+`images/` directory before including the section.
+
 The figure and LaTeX source also include the original values from Tables 1 and
 2 of the MemQ paper. Table 2 does not specify whether its hop-wise structural
 values are WebQSP-only, CWQ-only, or a combined aggregation, so its rows are
