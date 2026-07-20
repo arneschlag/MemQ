@@ -26,6 +26,18 @@ def load_dataset(output, dataset, tag):
     with score_path.open() as handle:
         scores = json.load(handle)
     groups = defaultdict(lambda: defaultdict(list))
+    # Structural metrics are defined for every successfully reconstructed
+    # lookup item, including examples whose gold answer query is unavailable.
+    for item in lookup.values():
+        hop = item.get("hop_count") or len(item.get("where") or [])
+        if not hop:
+            continue
+        if item.get("ehr") is not None:
+            groups[hop]["ehr"].append(item["ehr"])
+        if item.get("gold_ged") is not None:
+            groups[hop]["ged"].append(item["gold_ged"])
+    # Answer metrics use the scorer's denominator and therefore only its
+    # per-example score records.
     for score in scores:
         item = lookup.get(score["id"], {})
         hop = score.get("hop_count") or len(item.get("where") or [])
@@ -33,10 +45,6 @@ def load_dataset(output, dataset, tag):
             continue
         groups[hop]["f1"].append(score["f1"])
         groups[hop]["hit"].append(score["hit@1"])
-        if item.get("ehr") is not None:
-            groups[hop]["ehr"].append(item["ehr"])
-        if item.get("gold_ged") is not None:
-            groups[hop]["ged"].append(item["gold_ged"])
     return groups
 
 
