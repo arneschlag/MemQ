@@ -6,11 +6,13 @@ import requests
 # local Freebase/Virtuoso service is the portable default; override it for a
 # container or remote deployment without changing source code.
 endpoint = os.environ.get("MEMQ_SPARQL_ENDPOINT", "http://localhost:3001/sparql")
+timeout = float(os.environ.get("MEMQ_SPARQL_TIMEOUT", "30"))
 
 def get_result(sql, ans):
     if "?" in ans:
         ans = ans.replace("?","")
-    response = requests.get(endpoint, params={"query": sql}, headers={"Accept": "application/json"})
+    response = requests.get(endpoint, params={"query": sql}, headers={"Accept": "application/json"},
+                            timeout=timeout)
     results = response.json()
     answers = []
     for result in results["results"]["bindings"]:
