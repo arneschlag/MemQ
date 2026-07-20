@@ -14,7 +14,8 @@ Denominator: by default the full set of questions that HAVE a gold answer set
 (`--all` to score over every question, counting unanswerable gold as 0).
 
 Config (env): MEMQ_DS, MEMQ_TAG (which lookup file), MEMQ_SCORE_ALL=1 for full-set,
-MEMQ_DIRFB=1 to enable v9's direction fallback.
+MEMQ_DIRFB=1 to enable v9's direction fallback. Per-example scores are written
+to ``output/<DS>_score_<TAG>.json`` for hop-level reports.
 Run only when Virtuoso is up:  python score_answers.py
 """
 import os
@@ -65,15 +66,19 @@ def main():
     scored = 0
     no_gold = 0
     sum_f1 = sum_hit = sum_p = sum_r = 0.0
+    details = []
 
     for i, d in enumerate(data):
         qid = d.get("id") or str(i)
-        ans = d.get("AnsE") or "?x"
+        pred_ans = d.get("ansE") or d.get("AnsE") or "?x"
+        gold_ans = d.get("gold_AnsE") or d.get("AnsE") or "?x"
         # --- gold (cached) ---
-        if qid in gold_cache:
+        if d.get("gold_answers") is not None:
+            gold = d["gold_answers"]
+        elif qid in gold_cache:
             gold = gold_cache[qid]
         else:
-            gold = safe_exec(d.get("ori_sparql"), ans)
+            gold = safe_exec(d.get("ori_sparql"), gold_ans)
             gold_cache[qid] = gold
             if (i + 1) % 100 == 0:
                 with open(GOLD_CACHE, "w") as f:
@@ -85,20 +90,26 @@ def main():
                 continue
             # score over full set: unanswerable gold contributes 0
             scored += 1
+            details.append({"id": qid, "hop_count": d.get("hop_count", len(d.get("where") or [])),
+                            "level": d.get("level"), "f1": 0.0, "hit@1": 0,
+                            "precision": 0.0, "recall": 0.0, "no_gold": True})
             continue
 
         # --- predicted: primary -> fallback1 -> fallback2 -> optional v9 dirfb ---
-        pred = safe_exec(d.get("reconstruct_sparql"), ans)
+        pred = safe_exec(d.get("reconstruct_sparql"), pred_ans)
         if not pred:
-            pred = safe_exec(d.get("reconstruct_sparql1"), ans)
+            pred = safe_exec(d.get("reconstruct_sparql1"), pred_ans)
         if not pred:
-            pred = safe_exec(d.get("reconstruct_sparql2"), ans)
+            pred = safe_exec(d.get("reconstruct_sparql2"), pred_ans)
         if not pred and DIRFB:
-            pred = safe_exec(d.get("reconstruct_sparql3"), ans)
+            pred = safe_exec(d.get("reconstruct_sparql3"), pred_ans)
 
         p, r, f1, hit = eval_result(gold, pred)
         sum_p += p; sum_r += r; sum_f1 += f1; sum_hit += hit
         scored += 1
+        details.append({"id": qid, "hop_count": d.get("hop_count", len(d.get("where") or [])),
+                        "level": d.get("level"), "f1": f1, "hit@1": hit,
+                        "precision": p, "recall": r, "no_gold": False})
         if (i + 1) % 200 == 0:
             print(f"  {i+1}/{n_total} macroF1={sum_f1/scored:.3f} hit@1={sum_hit/scored:.3f}", flush=True)
 
@@ -118,6 +129,8 @@ def main():
     print(json.dumps(metrics, indent=2))
     with open(f"output/{DS}_metrics_{TAG}.json", "w") as f:
         json.dump(metrics, f, indent=2)
+    with open(f"output/{DS}_score_{TAG}.json", "w") as f:
+        json.dump(details, f)
 
 
 if __name__ == "__main__":

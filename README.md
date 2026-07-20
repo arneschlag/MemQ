@@ -82,6 +82,39 @@ across compatible Freebase deployments; Hits@1 can vary slightly because many
 Freebase `SELECT DISTINCT` results have no specified order and the metric uses
 the first returned answer.
 
+### Zero-shot GrailQA and GrailQA++ evaluation
+
+This branch evaluates the existing v9 checkpoint only; it never fine-tunes on
+either Grail dataset. GrailQA's labelled development split is the public
+answer-level benchmark (the official test labels are hidden):
+
+```bash
+scripts/download_grailqa.sh
+scripts/prepare_grailqa.sh grailqa
+
+# On the CUDA/ROCm machine that has the downloaded v9 model:
+MEMQ_INFERENCE_DATASETS=grailqa_dev DATA_DIR="$PWD/output" \
+  MODEL_DIR="$PWD/models/Llama-3-MemQ-v9" python run_inference.py
+
+scripts/evaluate_grailqa.sh grailqa
+```
+
+GrailQA++ uses the same adapter, but its official repository currently ships no
+dataset files. Once an authorized labelled JSON release is available, place it
+at `data/grailqa++/grailqa++_dev.json`, then run the same three commands with
+`grailqa++` as the argument. The adapter reports coverage separately: functions
+(`count`, extrema, comparisons) and literal constraints are unsupported by the
+fixed v9 plan language and are excluded rather than mislabeled as failures.
+
+For a paper-style hop breakdown after runs with `MEMQ_GRAPH_METRICS=1`, use:
+
+```bash
+python scripts/plot_benchmark_metrics.py
+```
+
+It creates `figures/memq_hop_metrics.png`, with EHR, GoldGED, Macro-F1, and
+Hits@1 tables across every evaluated dataset.
+
 To additionally calculate the experimental EHR/GoldGED diagnostics (slower),
 set `MEMQ_GRAPH_METRICS=1` before running `reconstruct_lookup.py`.
 

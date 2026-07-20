@@ -37,8 +37,9 @@ n_with_gold = struct_hits_gold = 0
 sum_ehr = ehr_cnt = 0
 sum_ged = ged_cnt = 0
 for idx, d in enumerate(testdata):
-    item = {k: d.get(k) for k in ("id", "question", "ori_sparql", "AnsE", "BegE",
-                                  "main_path", "test_plan", "where")}
+    item = {k: d.get(k) for k in ("id", "dataset", "question", "ori_sparql", "AnsE",
+                                  "gold_AnsE", "gold_answers", "BegE", "main_path",
+                                  "test_plan", "where", "hop_count", "level", "function")}
     try:
         rec = build_reconstruction(d)
         item.update(rec)
