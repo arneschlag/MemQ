@@ -12,9 +12,13 @@ PYTHON="${MEMQ_PYTHON:-python}"
 [[ -x .venv/bin/python ]] && PYTHON=".venv/bin/python"
 PLAN="output/${DATASET}_dev_plan_v10.json"
 [[ -s "$PLAN" ]] || { echo "Missing $PLAN. Generate plans with run_inference.py on a CUDA/ROCm machine first." >&2; exit 1; }
+ENTITY_NAMES="output/${DATASET}_entity_names.json"
+[[ -s "$ENTITY_NAMES" ]] || { echo "Missing $ENTITY_NAMES. Run scripts/prepare_grailqa.sh first." >&2; exit 1; }
 
 "$PYTHON" scripts/build_v9_memory.py
+MERGED_NAMES="output/${DATASET}_cached_mid_names.json"
+"$PYTHON" scripts/merge_entity_names.py output/All_cached_mid_names.json "$ENTITY_NAMES" "$MERGED_NAMES"
 MEMQ_DS="${DATASET}_dev" MEMQ_PLAN="$PLAN" MEMQ_RETRIEVAL=adaptive \
-  MEMQ_KEY_EXPLAIN=output/key_explain_v9.json MEMQ_TAG=v9_dirfb MEMQ_GRAPH_METRICS=1 \
+  MEMQ_KEY_EXPLAIN=output/key_explain_v9.json MEMQ_MID_NAMES="$MERGED_NAMES" MEMQ_TAG=v9_dirfb MEMQ_GRAPH_METRICS=1 \
   "$PYTHON" reconstruct_lookup.py
 MEMQ_DS="${DATASET}_dev" MEMQ_TAG=v9_dirfb MEMQ_DIRFB=1 "$PYTHON" score_answers.py

@@ -99,6 +99,10 @@ MEMQ_INFERENCE_DATASETS=grailqa_dev DATA_DIR="$PWD/output" \
 scripts/evaluate_grailqa.sh grailqa
 ```
 
+The preparation step writes a separate MID-to-friendly-name overlay from the
+benchmark's supplied entity labels.  The scorer merges that overlay with the
+public v9 cache; no GrailQA relation, answer, or gold plan is provided to v9.
+
 GrailQA++ uses the same adapter, but its official repository currently ships no
 dataset files. Once an authorized labelled JSON release is available, place it
 at `data/grailqa++/grailqa++_dev.json`, then run the same three commands with

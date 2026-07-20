@@ -79,7 +79,8 @@ explain_list = list(explain_key.keys())
 model = SentenceTransformer(EMBED_MODEL)
 existing_embeddings = model.encode(explain_list, convert_to_tensor=False)
 
-with open("output/All_cached_mid_names.json", "r") as f:
+MID_NAMES = os.environ.get("MEMQ_MID_NAMES", "output/All_cached_mid_names.json")
+with open(MID_NAMES, "r") as f:
     mid_names = json.load(f)
 
 

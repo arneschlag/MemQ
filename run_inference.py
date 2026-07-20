@@ -57,9 +57,15 @@ def _generate_one(prompt, model, tokenizer):
     return plan
 
 
-def generate_plans(data, model, tokenizer, dataset_label="", checkpoint_path=None):
-    ok = retry = 0
-    for start in tqdm(range(0, len(data), BATCH_SIZE), desc=dataset_label):
+def generate_plans(data, model, tokenizer, dataset_label="", checkpoint_path=None,
+                   resume_at=0):
+    """Generate plans, preserving the contiguous valid prefix from a checkpoint."""
+    ok = sum(1 for item in data[:resume_at]
+             if str(item.get("test_plan", "")).startswith("Step1"))
+    retry = 0
+    if resume_at:
+        print(f"  [{dataset_label}] resuming at {resume_at}/{len(data)}", flush=True)
+    for start in tqdm(range(resume_at, len(data), BATCH_SIZE), desc=dataset_label):
         batch = data[start:start + BATCH_SIZE]
         prompts = [item.get("prompt", "") for item in batch]
         plans = _generate_batch(prompts, model, tokenizer)
@@ -80,6 +86,27 @@ def generate_plans(data, model, tokenizer, dataset_label="", checkpoint_path=Non
     print(f"  [{dataset_label}] done: {len(data)} plans, ok={ok}, retry_fail={retry}", flush=True)
     return data
 
+
+def load_checkpoint(prompt_data, checkpoint_path):
+    """Return a compatible partial output and its safely completed prefix length."""
+    if not os.path.exists(checkpoint_path):
+        return prompt_data, 0
+    try:
+        with open(checkpoint_path, "r") as f:
+            partial = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return prompt_data, 0
+    if (not isinstance(partial, list) or len(partial) != len(prompt_data)
+            or any(a.get("id") != b.get("id") for a, b in zip(partial, prompt_data))):
+        print(f"  ignoring incompatible checkpoint: {checkpoint_path}", flush=True)
+        return prompt_data, 0
+    complete = 0
+    for item in partial:
+        if not str(item.get("test_plan", "")).startswith("Step1"):
+            break
+        complete += 1
+    return partial, complete
+
 if __name__ == "__main__":
     t_start = time.time()
 
@@ -93,8 +120,10 @@ if __name__ == "__main__":
             data = json.load(f)
         print(f"  loaded {len(data)} prompts", flush=True)
 
+        checkpoint_path = plan_path + ".partial"
+        data, resume_at = load_checkpoint(data, checkpoint_path)
         data = generate_plans(data, model, tokenizer, dataset_label=name,
-                              checkpoint_path=plan_path + ".partial")
+                              checkpoint_path=checkpoint_path, resume_at=resume_at)
 
         with open(plan_path, "w") as f:
             json.dump(data, f)

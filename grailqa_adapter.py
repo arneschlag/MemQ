@@ -124,12 +124,19 @@ def main():
         raise ValueError("Expected a JSON array")
 
     prepared, skipped = [], Counter()
+    entity_names = {}
     for row in rows:
         item, reason = convert(row, args.dataset)
         if item is None:
             skipped[reason] += 1
         else:
             prepared.append(item)
+            # The v9 reconstructor resolves plan entity surface forms through
+            # a MID -> friendly-name cache. These are benchmark-supplied
+            # entity labels, not learned relations, answers, or plans.
+            for node in row["graph_query"]["nodes"]:
+                if node.get("node_type") == "entity" and node.get("friendly_name"):
+                    entity_names["ns:" + node["id"]] = node["friendly_name"]
     output = Path(args.output or f"output/{args.dataset}_dev_prompt.json")
     report = Path(args.report or f"output/{args.dataset}_dev_preparation.json")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -139,7 +146,11 @@ def main():
         json.dump({"dataset": args.dataset, "input": str(dataset_file),
                    "total": len(rows), "prepared": len(prepared),
                    "skipped": dict(sorted(skipped.items()))}, handle, indent=2)
+    entity_cache = output.with_name(f"{args.dataset}_entity_names.json")
+    with entity_cache.open("w") as handle:
+        json.dump(entity_names, handle)
     print(f"Prepared {len(prepared)}/{len(rows)} {args.dataset} examples -> {output}")
+    print(f"Wrote {len(entity_names)} supplied entity names -> {entity_cache}")
     if skipped:
         print("Skipped:", dict(sorted(skipped.items())))
 
