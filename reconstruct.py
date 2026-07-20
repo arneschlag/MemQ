@@ -3,7 +3,9 @@ from scipy.spatial.distance import cdist
 import numpy as np
 import re
 import json
+import time
 import networkx as nx
+from collections import Counter
 from sparql_util import get_result
 
 variablepattern = r"\?[A-Za-z0-9_]+"
@@ -314,6 +316,105 @@ def process_find(e_new, explain, G, cvt_node_cnt, seen_type2, main_entity, idx=N
 SPARQL_TEMPLATE = """PREFIX ns: <http://rdf.freebase.com/ns/>\nSELECT DISTINCT {ansE}\nWHERE{{\n{where}\n}}\n{sort_sparql}"""
 
 
+# ---- EHR / GoldGED (paper section 5.3): compare the reconstructed graph
+# against the golden decomposition graph already stored in each test-plan
+# entry as d['where'] (list of [subj, pred, obj] triples). Grounded terms
+# (mids) must match exactly; all variables are treated as an interchangeable
+# "VAR" placeholder, since the LLM/reconstruction pipeline invents fresh
+# names for intermediate CVT nodes (?cvt_0, ...) that have no counterpart
+# in the gold variable names (?y, ?c, ...).
+def node_label(n):
+    return n if not n.startswith("?") else "VAR"
+
+
+def extract_where_block(sparql_text):
+    start = sparql_text.index("WHERE")
+    brace_start = sparql_text.index("{", start)
+    depth = 0
+    i = brace_start
+    while i < len(sparql_text):
+        if sparql_text[i] == "{":
+            depth += 1
+        elif sparql_text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    return sparql_text[brace_start + 1:i]
+
+
+def strip_filters(where_block):
+    out = []
+    i = 0
+    while i < len(where_block):
+        if where_block[i:i + 6] == "FILTER":
+            j = where_block.index("(", i)
+            depth = 1
+            k = j + 1
+            while k < len(where_block) and depth > 0:
+                if where_block[k] == "(":
+                    depth += 1
+                elif where_block[k] == ")":
+                    depth -= 1
+                k += 1
+            i = k
+        else:
+            out.append(where_block[i])
+            i += 1
+    return "".join(out)
+
+
+def extract_triples(where_block):
+    cleaned = strip_filters(where_block)
+    cleaned = cleaned.replace("{", " ").replace("}", " ").replace("UNION", " ")
+    triples = []
+    for line in cleaned.split(" .\n"):
+        parts = line.strip().strip(".").split()
+        if len(parts) == 3:
+            triples.append(tuple(parts))
+    return triples
+
+
+def edge_multiset(triples):
+    return Counter((node_label(s), p, node_label(o)) for s, p, o in triples)
+
+
+def compute_ehr(gold_triples, pred_triples):
+    gold_edges = edge_multiset(gold_triples)
+    total = sum(gold_edges.values())
+    if total == 0:
+        return None
+    pred_edges = edge_multiset(pred_triples)
+    hit = sum((gold_edges & pred_edges).values())
+    return hit / total
+
+
+def build_triple_graph(triples):
+    g = nx.DiGraph()
+    for s, p, o in triples:
+        g.add_node(s, label=node_label(s))
+        g.add_node(o, label=node_label(o))
+        g.add_edge(s, o, label=p)
+    return g
+
+
+GED_TIMEOUT_SEC = 2.0
+
+
+def compute_gold_ged(gold_triples, pred_triples):
+    g_gd = build_triple_graph(gold_triples)
+    g_re = build_triple_graph(pred_triples)
+    node_match = lambda a, b: a["label"] == b["label"]
+    edge_match = lambda a, b: a["label"] == b["label"]
+    start = time.time()
+    best = None
+    for cost in nx.optimize_graph_edit_distance(g_re, g_gd, node_match=node_match, edge_match=edge_match):
+        best = cost
+        if time.time() - start > GED_TIMEOUT_SEC:
+            break
+    return best
+
+
 # Process both datasets. Set DS to "webqsp" or "cwq" to run one at a time,
 # or use the environment variable MEMQ_DS.
 import os
@@ -331,6 +432,10 @@ exception_idx = []
 total_precision = 0
 total_recall = 0
 total_hit_at_1 = 0
+total_ehr = 0
+ehr_cnt = 0
+total_gold_ged = 0
+ged_cnt = 0
 
 for idx, d in enumerate(testdata):
     try:
@@ -444,7 +549,18 @@ for idx, d in enumerate(testdata):
         where = " .\n".join(all_step_sparql)
         reconstruct_sparql = SPARQL_TEMPLATE.format(ansE=ansE, where=where, sort_sparql=sort_sparql)
         d['reconstruct_sparql'] = reconstruct_sparql
-        
+
+        gold_triples = [tuple(t) for t in d.get('where', [])]
+        pred_triples = extract_triples(extract_where_block(reconstruct_sparql))
+        d['ehr'] = compute_ehr(gold_triples, pred_triples)
+        d['gold_ged'] = compute_gold_ged(gold_triples, pred_triples)
+        if d['ehr'] is not None:
+            total_ehr += d['ehr']
+            ehr_cnt += 1
+        if d['gold_ged'] is not None:
+            total_gold_ged += d['gold_ged']
+            ged_cnt += 1
+
         if len(true_result) >0:
             try:
                 pred_result = get_result(reconstruct_sparql, ansE)
@@ -532,11 +648,16 @@ avg_recall = total_recall/total_num
 avg_hit_at_1 = total_hit_at_1/total_num
 f1 = 2*avg_precision*avg_recall/(avg_precision+avg_recall)
 
+avg_ehr = total_ehr / ehr_cnt if ehr_cnt else float('nan')
+avg_gold_ged = total_gold_ged / ged_cnt if ged_cnt else float('nan')
+
 print(exception_idx)
 print("===========================================")
 print(f"total evalable cnt = {total_num}")
 print(f"hit@1 = {avg_hit_at_1}")
 print(f"f1 = {f1}")
+print(f"EHR = {avg_ehr} (n={ehr_cnt})")
+print(f"GoldGED = {avg_gold_ged} (n={ged_cnt})")
 
 
 # with open(f"output/{DS}_test_reconstruct_v10.json","w") as f:

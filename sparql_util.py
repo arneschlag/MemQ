@@ -1,5 +1,11 @@
+import os
+
 import requests
-endpoint = "http://localhost:3001/sparql"
+
+# The previous value pointed at a private host used for the experiments.  A
+# local Freebase/Virtuoso service is the portable default; override it for a
+# container or remote deployment without changing source code.
+endpoint = os.environ.get("MEMQ_SPARQL_ENDPOINT", "http://localhost:3001/sparql")
 
 def get_result(sql, ans):
     if "?" in ans:
@@ -29,4 +35,3 @@ def get_friendly_name(mid):
         return name
     except:
         raise Exception(f"unable to get name for {mid}")
-    

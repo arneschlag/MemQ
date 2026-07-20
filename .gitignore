@@ -1,14 +1,38 @@
-*.zip
-*.json
-*.db
-*.dot
-TRAINING_SUMMARY.md
-*.pyc
-cwq_dataset/*
-webqsp/*
-.venv311
+# Local datasets and generated experiment artifacts.  Public release copies are
+# downloaded through scripts/, never committed to the source repository.
+data/
+output/
+models/
 model/
-*.bak
-Commented Evaluation of KGQA Related-Work Notes for the MemQ Seminar Paper.pdf
+cwq_dataset/
+webqsp/
+TRAINING_SUMMARY.md
+*.pdf
+*.dot
 background.png
 ollama.png
+
+# Local services, virtual environments, caches, and certificates.
+freebase-setup/
+.venv/
+.venv*/
+__pycache__/
+*.py[cod]
+*.db
+*.trx
+*.pxa
+*.key
+*.crt
+
+# Credentials and machine-specific configuration.
+.env
+.env.*
+!.env.example
+*_key
+*_key.*
+*token*
+
+# Editor and operating-system files.
+.DS_Store
+.vscode/
+*.bak

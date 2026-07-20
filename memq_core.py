@@ -6,7 +6,8 @@ background with NO Freebase service. The only thing that touches the DB is the
 *answer* execution, which lives in `score_answers.py`.
 
 Retrieval is configurable via env vars so Exp 2/3 don't need code edits:
-  MEMQ_EMBED_MODEL  sentence-transformers path   (default model/all-MiniLM-L6-v2)
+  MEMQ_EMBED_MODEL  sentence-transformers model/path
+                     (default sentence-transformers/all-MiniLM-L6-v2)
   MEMQ_RETRIEVAL    legacy | adaptive            (default legacy = today's reranker)
   MEMQ_GAMMA1       adaptive: top-1 cutoff       (default 0.90)
   MEMQ_GAMMA2       adaptive: multi-recall cutoff(default 0.80)
@@ -18,7 +19,9 @@ of `score_answers.py`, which must stay torch-free.
 import os
 import re
 import json
+import time
 import numpy as np
+from collections import Counter
 from scipy.spatial.distance import cdist
 import networkx as nx
 from sentence_transformers import SentenceTransformer
@@ -42,7 +45,9 @@ existspattern = r"Find (.+), assign it to (\?[A-Za-z0-9_]+)\. If (\?[A-Za-z0-9_]
 SPARQL_TEMPLATE = """PREFIX ns: <http://rdf.freebase.com/ns/>\nSELECT DISTINCT {ansE}\nWHERE{{\n{where}\n}}\n{sort_sparql}"""
 
 # ---------------------------------------------------------------- config
-EMBED_MODEL = os.environ.get("MEMQ_EMBED_MODEL", "model/all-MiniLM-L6-v2")
+EMBED_MODEL = os.environ.get(
+    "MEMQ_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
+)
 RETRIEVAL = os.environ.get("MEMQ_RETRIEVAL", "adaptive")  # adaptive (paper, default) | legacy
 GAMMA1 = float(os.environ.get("MEMQ_GAMMA1", "0.90"))   # adaptive: exact-match cutoff
 GAMMA2 = float(os.environ.get("MEMQ_GAMMA2", "0.80"))   # adaptive: multi-recall cutoff
@@ -430,6 +435,114 @@ def structure_accuracy(reconstruct_sparql, ori_sparql):
     paper's structural-correctness signal — directly catches a single-hop
     relation being wrongly reconstructed as a two-hop CVT path."""
     return 1 if _relation_multiset(reconstruct_sparql) == _relation_multiset(ori_sparql) else 0
+
+
+# ---------------------------------------------------------------- EHR / GoldGED (paper 5.3)
+# Golden graph = d['where'] (list of [subj, pred, obj] triples, already present in
+# every test-plan entry). Reconstructed graph = triples parsed back out of
+# reconstruct_sparql. Grounded terms (mids) must match exactly; all variables are
+# treated as an interchangeable "VAR" placeholder, since the pipeline invents
+# fresh names for intermediate CVT nodes (?cvt_0, ...) that have no counterpart
+# in the gold variable names (?y, ?c, ...). The paper doesn't specify the exact
+# node-correspondence rule, so this is a documented approximation, not a verbatim
+# reproduction of the (unpublished) original implementation.
+def node_label(n):
+    return n if not n.startswith("?") else "VAR"
+
+
+def extract_where_block(sparql_text):
+    start = sparql_text.index("WHERE")
+    brace_start = sparql_text.index("{", start)
+    depth = 0
+    i = brace_start
+    while i < len(sparql_text):
+        if sparql_text[i] == "{":
+            depth += 1
+        elif sparql_text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    return sparql_text[brace_start + 1:i]
+
+
+def strip_filters(where_block):
+    out = []
+    i = 0
+    while i < len(where_block):
+        if where_block[i:i + 6] == "FILTER":
+            j = where_block.index("(", i)
+            depth = 1
+            k = j + 1
+            while k < len(where_block) and depth > 0:
+                if where_block[k] == "(":
+                    depth += 1
+                elif where_block[k] == ")":
+                    depth -= 1
+                k += 1
+            i = k
+        else:
+            out.append(where_block[i])
+            i += 1
+    return "".join(out)
+
+
+def extract_triples(where_block):
+    cleaned = strip_filters(where_block)
+    cleaned = cleaned.replace("{", " ").replace("}", " ").replace("UNION", " ")
+    triples = []
+    for line in cleaned.split(" .\n"):
+        parts = line.strip().strip(".").split()
+        if len(parts) == 3:
+            triples.append(tuple(parts))
+    return triples
+
+
+def edge_multiset(triples):
+    return Counter((node_label(s), p, node_label(o)) for s, p, o in triples)
+
+
+def compute_ehr(gold_triples, pred_triples):
+    gold_edges = edge_multiset(gold_triples)
+    total = sum(gold_edges.values())
+    if total == 0:
+        return None
+    pred_edges = edge_multiset(pred_triples)
+    hit = sum((gold_edges & pred_edges).values())
+    return hit / total
+
+
+def build_triple_graph(triples):
+    g = nx.DiGraph()
+    for s, p, o in triples:
+        g.add_node(s, label=node_label(s))
+        g.add_node(o, label=node_label(o))
+        g.add_edge(s, o, label=p)
+    return g
+
+
+GED_TIMEOUT_SEC = 2.0
+
+
+def compute_gold_ged(gold_triples, pred_triples):
+    g_gd = build_triple_graph(gold_triples)
+    g_re = build_triple_graph(pred_triples)
+    node_match = lambda a, b: a["label"] == b["label"]
+    edge_match = lambda a, b: a["label"] == b["label"]
+    start = time.time()
+    best = None
+    for cost in nx.optimize_graph_edit_distance(g_re, g_gd, node_match=node_match, edge_match=edge_match):
+        best = cost
+        if time.time() - start > GED_TIMEOUT_SEC:
+            break
+    return best
+
+
+def reasoning_metrics(gold_where, reconstruct_sparql):
+    """Convenience wrapper returning (ehr, gold_ged) for a lookup-pass item."""
+    gold_triples = [tuple(t) for t in (gold_where or [])]
+    pred_triples = extract_triples(extract_where_block(reconstruct_sparql))
+    return compute_ehr(gold_triples, pred_triples), compute_gold_ged(gold_triples, pred_triples)
 
 
 # ---------------------------------------------------------------- answer-set metrics

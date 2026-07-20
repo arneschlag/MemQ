@@ -3,10 +3,9 @@ from openai import OpenAI
 import json
 from tqdm import tqdm
 
-client = OpenAI(
-    api_key=os.environ.get("DEEPSEEK_API_KEY", "your_key"),
-    base_url="https://api.deepseek.com"
-)
+# Created only after an explicit key check in __main__; importing this module is
+# safe and never reads a credential from a source file.
+client = None
 
 TYPE1_TEMPLATE = """Act as a SPARQL expert. 
 I need you to explain the meaning and function of a specific part of a SPARQL query.
@@ -218,6 +217,13 @@ def process_keys(keys, template, desc, snapshot_path):
 
 
 if __name__ == "__main__":
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise SystemExit(
+            "DEEPSEEK_API_KEY is required to generate descriptions. "
+            "Export it in the shell; never add it to a source file."
+        )
+    client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
     with open("output/all_key.json", "r") as f:
         all_key = json.load(f)
 

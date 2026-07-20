@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 MODEL_DIR = os.environ.get("MODEL_DIR", "/root/models/memq-llama3-8b-lora-v9-merged")
 DATA_DIR = os.environ.get("DATA_DIR", "/root/data")
+PLAN_SUFFIX = os.environ.get("MEMQ_PLAN_SUFFIX", "v10")
 
 def load_model(path):
     t0 = time.time()
@@ -64,7 +65,7 @@ if __name__ == "__main__":
 
     for name in ["webqsp_test", "cwq_test"]:
         prompt_path = os.path.join(DATA_DIR, f"{name}_prompt.json")
-        plan_path   = os.path.join(DATA_DIR, f"{name}_plan.json")
+        plan_path = os.path.join(DATA_DIR, f"{name}_plan_{PLAN_SUFFIX}.json")
         print(f"\n=== {name} ===", flush=True)
         with open(prompt_path, "r") as f:
             data = json.load(f)
