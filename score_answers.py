@@ -13,7 +13,8 @@ Paper-faithful evaluation:
 Denominator: by default the full set of questions that HAVE a gold answer set
 (`--all` to score over every question, counting unanswerable gold as 0).
 
-Config (env): MEMQ_DS, MEMQ_TAG (which lookup file), MEMQ_SCORE_ALL=1 for full-set.
+Config (env): MEMQ_DS, MEMQ_TAG (which lookup file), MEMQ_SCORE_ALL=1 for full-set,
+MEMQ_DIRFB=1 to enable v9's direction fallback.
 Run only when Virtuoso is up:  python score_answers.py
 """
 import os
@@ -24,6 +25,9 @@ from sparql_util import get_result
 DS = os.environ.get("MEMQ_DS", "webqsp")
 TAG = os.environ.get("MEMQ_TAG", "legacy_all-MiniLM-L6-v2")
 SCORE_ALL = os.environ.get("MEMQ_SCORE_ALL", "0") == "1" or "--all" in sys.argv
+# Historical v9 compatibility: only try reconstruct_sparql3 when explicitly
+# requested, so ordinary modern runs retain their original evaluation path.
+DIRFB = os.environ.get("MEMQ_DIRFB", "0") == "1"
 
 LOOKUP = f"output/{DS}_test_lookup_{TAG}.json"
 GOLD_CACHE = f"output/{DS}_gold_answers.json"
@@ -83,12 +87,14 @@ def main():
             scored += 1
             continue
 
-        # --- predicted: primary -> fallback1 -> fallback2 ---
+        # --- predicted: primary -> fallback1 -> fallback2 -> optional v9 dirfb ---
         pred = safe_exec(d.get("reconstruct_sparql"), ans)
         if not pred:
             pred = safe_exec(d.get("reconstruct_sparql1"), ans)
         if not pred:
             pred = safe_exec(d.get("reconstruct_sparql2"), ans)
+        if not pred and DIRFB:
+            pred = safe_exec(d.get("reconstruct_sparql3"), ans)
 
         p, r, f1, hit = eval_result(gold, pred)
         sum_p += p; sum_r += r; sum_f1 += f1; sum_hit += hit

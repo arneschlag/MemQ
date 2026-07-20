@@ -66,16 +66,21 @@ The resulting `output/*_test_lookup_public_v9.json` files contain reconstructed
 SPARQL and database-free metrics. The original reported answer-level scores
 require a local Freebase/Virtuoso service, described below.
 
-### Reproduction scope
+### Reproduce the historical v9 + dirfb run
 
-The public plans, memory, and current reconstruction code reproduce a complete
-fresh lookup-and-score run. They do **not** currently regenerate the historical
-best `v9_dirfb` rows in [RESULTS.md](RESULTS.md): the repository contains the
-recorded metrics but no executable `dirfb` retrieval/reconstruction mode or its
-frozen reconstructed-query artifacts. Treat those rows as archived experiment
-results until that missing configuration or artifact is released. The regular
-public path is still useful for validating installation and for comparing future
-changes under one explicit configuration.
+After setup and download of the public artifacts, this command rebuilds the
+v9-compatible Type-1 memory deterministically, reconstructs the supplied v9
+plans, and enables the historical direction fallback during answer scoring:
+
+```bash
+scripts/reproduce_v9_dirfb.sh all
+```
+
+It needs a reachable Freebase/Virtuoso endpoint, configured by `scripts/setup.sh`.
+The run writes `output/{webqsp,cwq}_metrics_v9_dirfb.json`. Macro-F1 is stable
+across compatible Freebase deployments; Hits@1 can vary slightly because many
+Freebase `SELECT DISTINCT` results have no specified order and the metric uses
+the first returned answer.
 
 To additionally calculate the experimental EHR/GoldGED diagnostics (slower),
 set `MEMQ_GRAPH_METRICS=1` before running `reconstruct_lookup.py`.

@@ -311,6 +311,33 @@ def process_find(e_new, explain, G, cvt_node_cnt, seen_type2, main_entity, idx=N
         raise Exception(f"{idx}: more than 2 nodes error")
 
 
+# ---------------------------------------------------------------- direction fallback (historical v9 compatibility)
+_GUARD_RELS = ("ns:type.object.name", "ns:type.object.type")
+
+
+def _flip_one_triple(triple):
+    """Return a UNION that tries both directions of one plain RDF triple."""
+    parts = triple.strip().split()
+    if len(parts) != 3:
+        return None
+    subject, relation, obj = parts
+    if not relation.startswith("ns:") or relation in _GUARD_RELS:
+        return None
+    return f"{{ {subject} {relation} {obj} }}UNION{{ {obj} {relation} {subject} }}"
+
+
+def _both_directions(step):
+    """Recreate v9's recall fallback for direction-ambiguous relations.
+
+    The original v9 memory used direction-agnostic Type-1 descriptions. This
+    fallback is constructed for every query, but is executed only when the
+    scorer receives ``MEMQ_DIRFB=1`` and all prior variants are empty.
+    """
+    if "FILTER" in step or "UNION" in step:
+        return step
+    return " .\n".join(_flip_one_triple(triple) or triple for triple in step.split(" .\n"))
+
+
 # ---------------------------------------------------------------- plan -> SPARQL (DB-free)
 def build_reconstruction(d):
     """Parse d['test_plan'] into reconstructed SPARQL strings. Pure string/graph
@@ -410,10 +437,17 @@ def build_reconstruction(d):
     except Exception:
         fb2 = None
 
+    # Historical v9 fallback 3: retry each relation in either direction.  Keep
+    # it separate from the primary query so modern runs remain unchanged unless
+    # score_answers.py is called with MEMQ_DIRFB=1.
+    steps3 = [_both_directions(step) for step in all_step_sparql]
+    fb3 = SPARQL_TEMPLATE.format(ansE=ansE, where=" .\n".join(steps3), sort_sparql=sort_sparql)
+
     return {
         "reconstruct_sparql": primary,
         "reconstruct_sparql1": fb1,
         "reconstruct_sparql2": fb2,
+        "reconstruct_sparql3": fb3,
         "ansE": ansE,
         "main_entity": main_entity,
     }
