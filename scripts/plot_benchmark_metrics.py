@@ -45,11 +45,14 @@ def table(ax, title, datasets, hops, metric):
     rows = []
     for name, groups in datasets.items():
         values = [mean(groups[hop][metric]) for hop in hops]
-        rows.append([name] + [fmt(value) for value in values] + [fmt(mean([v for v in values if v is not None]))])
+        label = {"webqsp": "WebQSP", "cwq": "CWQ", "grailqa_dev": "GrailQA dev",
+                 "grailqa++_dev": "GrailQA++ dev"}.get(name, name)
+        rows.append([label] + [fmt(value) for value in values] + [fmt(mean([v for v in values if v is not None]))])
+    widths = [0.14] + [(0.86 / (len(hops) + 1))] * (len(hops) + 1)
     rendered = ax.table(cellText=rows, colLabels=["Dataset"] + [str(hop) for hop in hops] + ["avg"],
-                        cellLoc="center", loc="center")
+                        colWidths=widths, cellLoc="center", loc="center")
     rendered.auto_set_font_size(False)
-    rendered.set_fontsize(10)
+    rendered.set_fontsize(9)
     rendered.scale(1, 1.55)
     for cell in rendered.get_celld().values():
         cell.set_edgecolor("#555555")
