@@ -45,9 +45,12 @@ def table(ax, title, datasets, hops, metric):
     rows = []
     for name, groups in datasets.items():
         values = [mean(groups[hop][metric]) for hop in hops]
+        # The overall benchmark metric is the mean over examples, not an
+        # unweighted mean over hop bins (whose group sizes vary substantially).
+        overall_values = [value for hop in hops for value in groups[hop][metric]]
         label = {"webqsp": "WebQSP", "cwq": "CWQ", "grailqa_dev": "GrailQA dev",
                  "grailqa++_dev": "GrailQA++ dev"}.get(name, name)
-        rows.append([label] + [fmt(value) for value in values] + [fmt(mean([v for v in values if v is not None]))])
+        rows.append([label] + [fmt(value) for value in values] + [fmt(mean(overall_values))])
     widths = [0.14] + [(0.86 / (len(hops) + 1))] * (len(hops) + 1)
     rendered = ax.table(cellText=rows, colLabels=["Dataset"] + [str(hop) for hop in hops] + ["avg"],
                         colWidths=widths, cellLoc="center", loc="center")
@@ -86,8 +89,16 @@ def main():
     fig.subplots_adjust(left=0.025, right=0.975, top=0.88, bottom=0.07,
                         hspace=0.58, wspace=0.03)
     fig.savefig(figure, dpi=220, bbox_inches="tight")
-    summary = {name: {str(hop): {metric: mean(values) for metric, values in metrics.items()}
-                      for hop, metrics in groups.items()} for name, groups in loaded.items()}
+    summary = {}
+    for name, groups in loaded.items():
+        summary[name] = {
+            str(hop): {metric: mean(values) for metric, values in metrics.items()}
+            for hop, metrics in groups.items()
+        }
+        summary[name]["overall"] = {
+            metric: mean([value for hop in groups for value in groups[hop][metric]])
+            for metric in ("ehr", "ged", "f1", "hit")
+        }
     summary_path = Path(args.summary); summary_path.parent.mkdir(parents=True, exist_ok=True)
     with summary_path.open("w") as handle:
         json.dump(summary, handle, indent=2)
