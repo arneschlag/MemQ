@@ -16,6 +16,7 @@ PLAN_SUFFIX = os.environ.get("MEMQ_PLAN_SUFFIX", "v10")
 DATASETS = [name.strip() for name in os.environ.get(
     "MEMQ_INFERENCE_DATASETS", "webqsp_test,cwq_test"
 ).split(",") if name.strip()]
+BATCH_SIZE = int(os.environ.get("MEMQ_BATCH_SIZE", "1"))
 
 def load_model(path):
     t0 = time.time()
@@ -26,38 +27,56 @@ def load_model(path):
     print(f"[load] {time.time()-t0:.0f}s  device={next(model.parameters()).device}", flush=True)
     return model, tok
 
-def generate_plans(data, model, tokenizer, dataset_label=""):
-    ok = retry = 0
-    for i, d in enumerate(tqdm(data, desc=dataset_label)):
-        prompt = d.get("prompt", "")
-        if not prompt:
-            continue
-        ids = tokenizer.apply_chat_template(
-            [{"role": "user", "content": prompt}],
-            add_generation_prompt=True,
-            return_tensors="pt",
-        ).to(model.device)
-        attn = ids.ne(tokenizer.pad_token_id).long()
-        # Retry loop from gen_testplan.py
-        plan = ""
-        error_cnt = 0
-        while error_cnt < 3 and (not plan.startswith("Step1")):
-            out = model.generate(
-                ids, attention_mask=attn,
-                max_new_tokens=512, do_sample=False,
-                pad_token_id=tokenizer.pad_token_id,
-            )
-            plan = tokenizer.decode(out[0][len(ids[0]):], skip_special_tokens=True).strip()
-            if not plan.startswith("Step1"):
-                error_cnt += 1
-        d["test_plan"] = plan
+def _generate_batch(prompts, model, tokenizer):
+    """Greedy batched decoding; output is identical in intent to the old loop."""
+    rendered = [tokenizer.apply_chat_template(
+        [{"role": "user", "content": prompt}],
+        add_generation_prompt=True, tokenize=False,
+    ) for prompt in prompts]
+    previous_padding_side = tokenizer.padding_side
+    tokenizer.padding_side = "left"
+    inputs = tokenizer(rendered, return_tensors="pt", padding=True).to(model.device)
+    try:
+        out = model.generate(
+            **inputs, max_new_tokens=512, do_sample=False,
+            pad_token_id=tokenizer.pad_token_id,
+        )
+    finally:
+        tokenizer.padding_side = previous_padding_side
+    input_length = inputs.input_ids.shape[1]
+    return [tokenizer.decode(row[input_length:], skip_special_tokens=True).strip() for row in out]
+
+
+def _generate_one(prompt, model, tokenizer):
+    # Retain the historical retry behavior only for malformed batch outputs.
+    plan = ""
+    for _ in range(3):
+        plan = _generate_batch([prompt], model, tokenizer)[0]
         if plan.startswith("Step1"):
-            ok += 1
-        elif error_cnt >= 3:
-            retry += 1
-        # Print every 200th so we can see progress in logs
-        if i % 200 == 0 and i > 0:
-            print(f"  [{dataset_label}] {i}/{len(data)} ok={ok} retry_fail={retry}", flush=True)
+            break
+    return plan
+
+
+def generate_plans(data, model, tokenizer, dataset_label="", checkpoint_path=None):
+    ok = retry = 0
+    for start in tqdm(range(0, len(data), BATCH_SIZE), desc=dataset_label):
+        batch = data[start:start + BATCH_SIZE]
+        prompts = [item.get("prompt", "") for item in batch]
+        plans = _generate_batch(prompts, model, tokenizer)
+        for item, prompt, plan in zip(batch, prompts, plans):
+            if prompt and not plan.startswith("Step1"):
+                plan = _generate_one(prompt, model, tokenizer)
+            item["test_plan"] = plan
+            if plan.startswith("Step1"):
+                ok += 1
+            else:
+                retry += 1
+        completed = min(start + len(batch), len(data))
+        if checkpoint_path and completed % 100 == 0:
+            with open(checkpoint_path, "w") as f:
+                json.dump(data, f)
+        if completed % 200 == 0:
+            print(f"  [{dataset_label}] {completed}/{len(data)} ok={ok} retry_fail={retry}", flush=True)
     print(f"  [{dataset_label}] done: {len(data)} plans, ok={ok}, retry_fail={retry}", flush=True)
     return data
 
@@ -74,7 +93,8 @@ if __name__ == "__main__":
             data = json.load(f)
         print(f"  loaded {len(data)} prompts", flush=True)
 
-        data = generate_plans(data, model, tokenizer, dataset_label=name)
+        data = generate_plans(data, model, tokenizer, dataset_label=name,
+                              checkpoint_path=plan_path + ".partial")
 
         with open(plan_path, "w") as f:
             json.dump(data, f)
