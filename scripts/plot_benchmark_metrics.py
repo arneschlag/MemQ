@@ -59,7 +59,7 @@ def table(ax, title, datasets, hops, metric):
     for col in range(len(hops) + 2):
         rendered[(0, col)].set_facecolor("#d9d9d9")
         rendered[(0, col)].set_text_props(weight="bold")
-    ax.set_title(title, fontsize=14, fontweight="bold", pad=14)
+    ax.set_title(title, fontsize=14, fontweight="bold", y=1.08)
 
 
 def main():
@@ -83,7 +83,8 @@ def main():
     table(axes[1, 0], "Answer Macro-F1", loaded, hops, "f1")
     table(axes[1, 1], "Answer Hits@1", loaded, hops, "hit")
     fig.suptitle("MemQ v9 + direction fallback by total hops", fontsize=16, fontweight="bold")
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.025, right=0.975, top=0.88, bottom=0.07,
+                        hspace=0.58, wspace=0.03)
     fig.savefig(figure, dpi=220, bbox_inches="tight")
     summary = {name: {str(hop): {metric: mean(values) for metric, values in metrics.items()}
                       for hop, metrics in groups.items()} for name, groups in loaded.items()}
