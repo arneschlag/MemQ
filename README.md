@@ -32,7 +32,7 @@ git clone https://github.com/arneschlag/MemQ.git
 cd MemQ
 
 # Guided selection of CPU, NVIDIA/CUDA or AMD/ROCm; creates .venv, installs
-# dependencies and downloads ~14 MiB of plans/memory artifacts. No credential.
+# dependencies and downloads ~25 MiB of prompts, plans, and memory artifacts.
 scripts/setup.sh
 
 # First run downloads sentence-transformers/all-MiniLM-L6-v2 from Hugging Face.
