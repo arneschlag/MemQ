@@ -19,11 +19,49 @@
   \end{tabular}
 \end{table}
 
+\begin{table}[t]
+  \centering
+  \caption{Comparison with the main MemQ results in Table~1 of the paper.}
+  \label{tab:memq-v9-paper-main-comparison}
+  \begin{tabular}{llrr}
+    \toprule
+    Dataset & Run & H@1 $\uparrow$ & Macro-F1 $\uparrow$ \\
+    \midrule
+    WebQSP & Paper Table 1 & 0.841 & 0.858 \\
+           & v9 reproduction & 0.822 & 0.823 \\
+    CWQ    & Paper Table 1 & 0.803 & 0.830 \\
+           & v9 reproduction & 0.723 & 0.738 \\
+    GrailQA & v9 zero-shot dev & 0.018 & 0.018 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table*}[t]
+  \centering
+  \caption{Original hop-wise structural results transcribed from Table~2 of
+  the MemQ paper. The paper does not identify a dataset-specific split or
+  aggregation for this table; these values should therefore not be interpreted
+  as a direct WebQSP-only or CWQ-only result.}
+  \label{tab:memq-paper-hop-structure}
+  \begin{tabular}{llrrrrrrrr}
+    \toprule
+    Metric & Method & 1 & 2 & 3 & 4 & 5 & 6 & 7 & avg \\
+    \midrule
+    EHR & RoG  & 0.853 & 0.644 & 0.390 & 0.276 & 0.249 & 0.230 & 0.283 & 0.377 \\
+        & MemQ & 0.816 & 0.844 & 0.854 & 0.851 & 0.854 & 0.861 & 0.939 & 0.860 \\
+    \midrule
+    GoldGED & RoG  & 0.479 & 2.494 & 3.764 & 4.505 & 5.499 & 7.193 & 10.438 & 4.910 \\
+            & MemQ & 0.158 & 0.465 & 0.909 & 1.364 & 1.611 & 2.531 & 2.250 & 1.327 \\
+    \bottomrule
+  \end{tabular}
+\end{table*}
+
 \begin{figure*}[t]
   \centering
   \includegraphics[width=\textwidth]{figures/memq_v9_hop_metrics.png}
-  \caption{Hop-wise breakdown for the evaluated datasets. The values are
-  means within each total-hop group; a dash denotes that the split has no
-  examples in that group.}
+  \caption{Original paper values and the hop-wise reproduction breakdown. The
+  values are means within each total-hop group; a dash denotes unavailable
+  paper values or no examples in that group. Paper answer metrics are available
+  only as dataset-level averages.}
   \label{fig:memq-v9-hop-metrics}
 \end{figure*}
