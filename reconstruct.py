@@ -1,5 +1,6 @@
 from sentence_transformers import SentenceTransformer
 from scipy.spatial.distance import cdist
+import os
 import numpy as np
 import re
 import json
@@ -50,7 +51,8 @@ for k in all_key:
 
 explain_list = list(explain_key.keys())
 
-model = SentenceTransformer('model/all-MiniLM-L6-v2')
+EMBED_MODEL = os.environ.get("MEMQ_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+model = SentenceTransformer(EMBED_MODEL)
 existing_embeddings = model.encode(explain_list, convert_to_tensor=False) 
 
 
@@ -417,8 +419,8 @@ def compute_gold_ged(gold_triples, pred_triples):
 
 # Process both datasets. Set DS to "webqsp" or "cwq" to run one at a time,
 # or use the environment variable MEMQ_DS.
-import os
 DS = os.environ.get("MEMQ_DS", "webqsp")
+GRAPH_METRICS = os.environ.get("MEMQ_GRAPH_METRICS", "0") == "1"
 
 if DS == "cwq":
     with open("output/cwq_test_plan_v10.json", "r") as f:
@@ -550,16 +552,17 @@ for idx, d in enumerate(testdata):
         reconstruct_sparql = SPARQL_TEMPLATE.format(ansE=ansE, where=where, sort_sparql=sort_sparql)
         d['reconstruct_sparql'] = reconstruct_sparql
 
-        gold_triples = [tuple(t) for t in d.get('where', [])]
-        pred_triples = extract_triples(extract_where_block(reconstruct_sparql))
-        d['ehr'] = compute_ehr(gold_triples, pred_triples)
-        d['gold_ged'] = compute_gold_ged(gold_triples, pred_triples)
-        if d['ehr'] is not None:
-            total_ehr += d['ehr']
-            ehr_cnt += 1
-        if d['gold_ged'] is not None:
-            total_gold_ged += d['gold_ged']
-            ged_cnt += 1
+        if GRAPH_METRICS:
+            gold_triples = [tuple(t) for t in d.get('where', [])]
+            pred_triples = extract_triples(extract_where_block(reconstruct_sparql))
+            d['ehr'] = compute_ehr(gold_triples, pred_triples)
+            d['gold_ged'] = compute_gold_ged(gold_triples, pred_triples)
+            if d['ehr'] is not None:
+                total_ehr += d['ehr']
+                ehr_cnt += 1
+            if d['gold_ged'] is not None:
+                total_gold_ged += d['gold_ged']
+                ged_cnt += 1
 
         if len(true_result) >0:
             try:
@@ -656,8 +659,9 @@ print("===========================================")
 print(f"total evalable cnt = {total_num}")
 print(f"hit@1 = {avg_hit_at_1}")
 print(f"f1 = {f1}")
-print(f"EHR = {avg_ehr} (n={ehr_cnt})")
-print(f"GoldGED = {avg_gold_ged} (n={ged_cnt})")
+if GRAPH_METRICS:
+    print(f"EHR = {avg_ehr} (n={ehr_cnt})")
+    print(f"GoldGED = {avg_gold_ged} (n={ged_cnt})")
 
 
 # with open(f"output/{DS}_test_reconstruct_v10.json","w") as f:
@@ -665,4 +669,3 @@ print(f"GoldGED = {avg_gold_ged} (n={ged_cnt})")
 
 with open(f"output/{DS}_test_reconstruct_v10.json","w") as f:
     json.dump(testdata,f)
-
