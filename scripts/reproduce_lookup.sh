@@ -8,10 +8,15 @@ if [[ "$DATASET" != "webqsp" && "$DATASET" != "cwq" ]]; then
   exit 2
 fi
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+PYTHON="${MEMQ_PYTHON:-python}"
+if [[ -x .venv/bin/python ]]; then PYTHON=".venv/bin/python"; fi
+
 if [[ ! -f output/key_explain.json || ! -f output/All_cached_mid_names.json || ! -f "output/${DATASET}_test_plan_v10.json" ]]; then
   echo "Missing public reproduction artifacts. Run scripts/download_reproduction_data.sh first." >&2
   exit 1
 fi
 
 MEMQ_DS="$DATASET" MEMQ_RETRIEVAL=adaptive MEMQ_TAG="public_v9" \
-  python reconstruct_lookup.py
+  "$PYTHON" reconstruct_lookup.py

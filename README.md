@@ -30,18 +30,37 @@ check that an installation is correct.
 ```bash
 git clone https://github.com/arneschlag/MemQ.git
 cd MemQ
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
 
-# Downloads ~14 MiB of plans and memory artifacts, no credentials required.
-scripts/download_reproduction_data.sh
+# Guided selection of CPU, NVIDIA/CUDA or AMD/ROCm; creates .venv, installs
+# dependencies and downloads ~14 MiB of plans/memory artifacts. No credential.
+scripts/setup.sh
 
 # First run downloads sentence-transformers/all-MiniLM-L6-v2 from Hugging Face.
 scripts/reproduce_lookup.sh webqsp
 scripts/reproduce_lookup.sh cwq
 ```
+
+### Setup choices: CPU, CUDA, or ROCm
+
+Running `scripts/setup.sh` without arguments guides the user through platform,
+optional model/data downloads, and the Freebase SPARQL endpoint. It saves that
+endpoint locally to ignored `.env`, then `scripts/reproduce_answers.sh` loads it
+automatically. For automation, the script also accepts an explicit platform:
+
+```bash
+scripts/setup.sh cpu                 # CPU-only lookup/evaluation; smallest install
+scripts/setup.sh cuda                # NVIDIA CUDA; default PyTorch cu126 wheels
+scripts/setup.sh rocm                # AMD ROCm; default PyTorch rocm6.3 wheels
+scripts/setup.sh auto --weights      # also download the 14.97 GiB v9 model
+scripts/setup.sh cpu --raw-data      # additionally download the 65 MiB source datasets
+```
+
+For an unusual driver/runtime, choose the platform explicitly and override its
+wheel index, for example
+`PYTORCH_ROCM_INDEX=https://download.pytorch.org/whl/rocm6.2.4 scripts/setup.sh rocm`.
+PyTorch's supported wheel combinations change over time; consult the official
+[installation selector](https://pytorch.org/get-started/locally/) when the
+default does not match a machine.
 
 The resulting `output/*_test_lookup_public_v9.json` files contain reconstructed
 SPARQL and database-free metrics. The original reported answer-level scores
@@ -53,8 +72,8 @@ set `MEMQ_GRAPH_METRICS=1` before running `reconstruct_lookup.py`.
 ## Model inference
 
 The supplied merged v9 model can generate plans on a CUDA/ROCm-capable machine.
-Install the PyTorch build appropriate for the system before installing the rest
-of the requirements, then download the model:
+Run `scripts/setup.sh cuda --weights` or `scripts/setup.sh rocm --weights` for
+a clean setup, then download the model if it was not selected during setup:
 
 ```bash
 scripts/download_weights.sh                 # resumable, SHA-256 verified
@@ -80,11 +99,23 @@ MEMQ_DS=webqsp MEMQ_TAG=public_v9 python score_answers.py
 MEMQ_DS=cwq    MEMQ_TAG=public_v9 python score_answers.py
 ```
 
+After guided setup, the shorter form is:
+
+```bash
+scripts/reproduce_answers.sh webqsp
+scripts/reproduce_answers.sh cwq
+```
+
 The large Freebase dump/database is not redistributed here. Follow the
 [DKI Freebase setup](https://github.com/dki-lab/Freebase-Setup), point
 `MEMQ_SPARQL_ENDPOINT` to it, and expect answer-level scores to vary if the
 snapshot, endpoint behavior, or gold-answer availability differs. Cached gold
 answers are written locally to `output/`.
+
+When running MemQ itself in Docker while Virtuoso is bound only to the Docker
+host's loopback interface, start the MemQ container with `--network host` and
+use `http://localhost:7001/sparql`. A normal bridge-network container cannot
+reach a port published solely on `127.0.0.1`.
 
 ## Full data and training pipeline
 
