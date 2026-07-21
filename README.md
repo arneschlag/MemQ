@@ -198,6 +198,23 @@ performed with [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory); the
 v9 configuration was LoRA rank 16, five epochs, learning rate `5e-5`, and
 cutoff length 2048.
 
+The joint v14 model (WebQSP + CWQ + GrailQA) keeps those hyperparameters and
+adds sequence packing (`packing: true`, `neat_packing: true`,
+`per_device_train_batch_size: 2`, `gradient_accumulation_steps: 1`), which
+yields 17,390 optimizer steps — close to v9's 18,145, so the learning rate
+carries over unchanged.
+
+On RDNA4 (gfx1201) packing is not merely an optimisation: without it, batches
+are padded to their own longest sequence, and the resulting varying GEMM shapes
+intermittently hit a Tensile kernel that performs an illegal memory access,
+killing the run. The reported error (`rocBLAS error: Could not initialize
+Tensile host: No devices found`) is misleading — by then the HIP context is
+already gone, so consult `dmesg` for the actual fault. Switching BLAS backend
+(`TORCH_BLAS_PREFER_HIPBLASLT`) does not help, since both libraries dispatch to
+the same Tensile kernels. Packing makes every batch exactly
+`batch × cutoff_len`, which keeps the shapes constant and the run stable; it
+also removes a large amount of padding waste and roughly halves the runtime.
+
 ## Results
 
 The complete result matrix and methodology notes are in

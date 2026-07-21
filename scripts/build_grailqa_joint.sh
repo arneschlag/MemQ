@@ -55,4 +55,4 @@ echo "[7/7] plan traces + v14 fine-tune data"
 MEMQ_KEY_EXPLAIN=output/key_explain_v14.json "$PYTHON" graph_explain.py
 MEMQ_FINETUNE_OUT=output/memq_finetune_data_v14.json "$PYTHON" gen_memq_finetune_data.py
 
-echo "Done. Upload output/memq_finetune_data_v14.json to bigstore for training."
+echo "Done. Use output/memq_finetune_data_v14.json as the LLaMA-Factory training set."
