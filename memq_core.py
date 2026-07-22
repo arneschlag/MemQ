@@ -348,6 +348,13 @@ def build_reconstruction(d):
     cvt_node_cnt = 0
     plan = d['test_plan']
     plan = re.compile(r'(\?[A-Za-z0-9_]+)').sub(r' \1', plan)  # llama3: space before vars
+    # Doppelte Blanks einebnen (NICHT \s, sonst verschwinden die Zeilenumbrueche,
+    # an denen die Schritte getrennt werden). Zwei Quellen: 5.6% der DeepSeek-
+    # Memory-Beschreibungen beginnen mit Whitespace ("Find " + " the gender of"),
+    # und die Zeile darueber setzt ein Blank vor jede Variable, auch wenn dort
+    # schon eines steht ("assign it to  ?x"). findpattern erwartet aber genau
+    # eines, sonst schlaegt jede Rekonstruktion fehl.
+    plan = re.sub(r'[ \t]{2,}', ' ', plan)
     steps = plan.split("\n")
 
     sort_sparql = ""
@@ -463,12 +470,26 @@ def build_reconstruction(d):
 
 
 # ---------------------------------------------------------------- structure accuracy (DB-free)
-_REL_RE = re.compile(r'ns:[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+')
+# GrailQA's gold queries bind the Freebase namespace to ":" instead of "ns:"
+# (PREFIX : <http://rdf.freebase.com/ns/>), so a pattern anchored on "ns:" finds
+# zero gold relations there and structure accuracy is 0 by construction. Accept
+# both prefixes and normalise to "ns:" so the multisets stay comparable.
+_REL_RE = re.compile(r'(?<![A-Za-z0-9_])(?:ns)?:([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)')
+
+
+# A type constraint ("?x :type.object.type :opera.opera_designer_gig") puts a
+# CLASS in object position that matches the relation pattern. GrailQA uses these
+# heavily, WebQSP not at all, so counting them would compare classes against
+# relations and depress GrailQA structure accuracy for the wrong reason.
+_TYPE_TRIPLE_RE = re.compile(
+    r'(?:ns)?:type\.object\.type\s+(?:ns)?:[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+')
 
 
 def _relation_multiset(sparql):
-    """Bag of ns: relation IRIs in a query, ignoring the type/name guard rels."""
-    rels = _REL_RE.findall(sparql or "")
+    """Bag of relation IRIs in a query, ignoring type/name guards and the class
+    IRIs that appear as their object."""
+    sparql = _TYPE_TRIPLE_RE.sub(" ", sparql or "")
+    rels = ("ns:" + r for r in _REL_RE.findall(sparql))
     return sorted(r for r in rels if r not in ("ns:type.object.name", "ns:type.object.type"))
 
 

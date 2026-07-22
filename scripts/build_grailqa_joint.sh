@@ -38,9 +38,18 @@ echo "[4/7] merge GrailQA entity/type names into the shared name cache"
 import json
 cache=json.load(open("output/All_cached_mid_names.json"))
 overlay=json.load(open("output/grailqa_train_entity_names.json"))
-cache.update(overlay)
+# GrailQA darf nur ERGAENZEN, niemals ueberschreiben. Sein friendly_name ist oft
+# kuerzer als der etablierte Name ("nixon" statt "Richard Nixon"); ein
+# cache.update(overlay) zerschiesst damit 451 WebQSP/CWQ-Namen. Die Test-Prompts
+# tragen aber die alten Namen, sodass die Entity-Aufloesung ins Leere laeuft und
+# jede betroffene Rekonstruktion scheitert (20% der Faelle).
+added=0
+for mid, name in overlay.items():
+    if mid not in cache:
+        cache[mid] = name
+        added += 1
 json.dump(cache, open("output/All_cached_mid_names.json","w"))
-print(f"name cache -> {len(cache)} entries")
+print(f"name cache -> {len(cache)} entries ({added} neu aus GrailQA)")
 PY
 
 echo "[5/7] split joint corpus into Type-1/2/3 statements"
