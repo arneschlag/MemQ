@@ -45,7 +45,11 @@ if [[ -z "$MODE" && "$NON_INTERACTIVE" == 0 && -t 0 ]]; then
   echo "Answer-level metrics need a Freebase/Virtuoso SPARQL endpoint."
   read -r -p "Endpoint URL (or 'skip') [http://localhost:3001/sparql]: " input_endpoint
   ENDPOINT="${input_endpoint:-http://localhost:3001/sparql}"
-  if ask_yes_no "Download the 14.97 GiB Llama-3-MemQ-v9 model now?"; then GET_WEIGHTS=1; fi
+  if ask_yes_no "Download the 15.0 GiB Llama-3-MemQ-v14 model now?"; then GET_WEIGHTS=1; fi
+  if [[ "$GET_WEIGHTS" == 1 ]] \
+     && ask_yes_no "Fetch v9 instead (the model the report's WebQSP/CWQ numbers use)?"; then
+    export MEMQ_MODEL_VERSION=v9
+  fi
   if ask_yes_no "Also download the 65 MiB WebQSP/CWQ source datasets?"; then GET_RAW_DATA=1; fi
 fi
 

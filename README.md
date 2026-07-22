@@ -5,14 +5,18 @@ LLM-based Knowledge Graph Reasoning](https://aclanthology.org/2025.findings-acl.
 It reconstructs executable Freebase SPARQL from a question, topic entity, and a
 model-generated natural-language plan.
 
-**Built with Meta Llama 3.** The public v9 fine-tune, its provenance, and the
-applicable base-model terms are documented in [MODEL_CARD.md](MODEL_CARD.md).
+**Built with Meta Llama 3.** The public fine-tunes (v14 joint, v9 WebQSP/CWQ),
+their provenance, and the applicable base-model terms are documented in
+[MODEL_CARD.md](MODEL_CARD.md).
 
 ## What is public
 
 - Source code and experiment documentation in this repository.
-- `Llama-3-MemQ-v9`, the merged 8B v9 model (14.97 GiB), through public B2
-  URLs only; the download script validates SHA-256 checksums.
+- `Llama-3-MemQ-v14`, the merged 8B joint model (15.0 GiB), and the earlier
+  `Llama-3-MemQ-v9` (14.97 GiB), through public B2 URLs only; the download
+  script validates SHA-256 checksums. v14 is the default; pass
+  `MEMQ_MODEL_VERSION=v9` for the model the WebQSP/CWQ figures below were
+  measured on.
 - The WebQSP/CWQ files used in this reproduction and the small generated
   artifacts needed to rerun the database-free reconstruction pass, also through
   public B2 URLs. The source datasets remain subject to their original terms.
@@ -51,7 +55,7 @@ automatically. For automation, the script also accepts an explicit platform:
 scripts/setup.sh cpu                 # CPU-only lookup/evaluation; smallest install
 scripts/setup.sh cuda                # NVIDIA CUDA; default PyTorch cu126 wheels
 scripts/setup.sh rocm                # AMD ROCm; default PyTorch rocm6.3 wheels
-scripts/setup.sh auto --weights      # also download the 14.97 GiB v9 model
+scripts/setup.sh auto --weights      # also download the 15.0 GiB v14 model
 scripts/setup.sh cpu --raw-data      # additionally download the 65 MiB source datasets
 ```
 
@@ -124,7 +128,8 @@ set `MEMQ_GRAPH_METRICS=1` before running `reconstruct_lookup.py`.
 
 ## Model inference
 
-The supplied merged v9 model can generate plans on a CUDA/ROCm-capable machine.
+The supplied merged model can generate plans on a CUDA/ROCm-capable machine.
+v14 is the default download; v9 remains available via `MEMQ_MODEL_VERSION=v9`.
 Run `scripts/setup.sh cuda --weights` or `scripts/setup.sh rocm --weights` for
 a clean setup, then download the model if it was not selected during setup:
 
@@ -132,7 +137,7 @@ a clean setup, then download the model if it was not selected during setup:
 scripts/download_weights.sh                 # resumable, SHA-256 verified
 scripts/download_reproduction_data.sh       # provides test prompts/plans/memory
 
-MODEL_DIR="$PWD/models/Llama-3-MemQ-v9" DATA_DIR="$PWD/output" \
+MODEL_DIR="$PWD/models/Llama-3-MemQ-v14" DATA_DIR="$PWD/output" \
   python run_inference.py
 ```
 

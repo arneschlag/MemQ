@@ -15,8 +15,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# TODO: flip the default to v14 once the merged v14 upload is public.
-VERSION="${MEMQ_MODEL_VERSION:-v9}"
+# v14 is the current model; set MEMQ_MODEL_VERSION=v9 to fetch the one the
+# seminar report's WebQSP/CWQ numbers were measured on.
+VERSION="${MEMQ_MODEL_VERSION:-v14}"
 BASE_URL="${MEMQ_MODEL_BASE_URL:-https://f003.backblazeb2.com/file/memq-finetunings/$VERSION/merged}"
 LICENSE_URL="https://huggingface.co/meta-llama/Meta-Llama-3-8B/resolve/main/LICENSE?download=true"
 # The release name follows the Meta Llama 3 redistribution requirement.
