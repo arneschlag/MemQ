@@ -10,6 +10,7 @@
 \usepackage{siunitx}
 \usepackage[hidelinks]{hyperref}
 \sisetup{detect-weight=true,detect-family=true}
+\sloppy
 
 \title{MemQ v14: Joint Fine-tuning on WebQSP, CWQ and GrailQA}
 \author{}
@@ -29,8 +30,7 @@ common practice.
 \begin{table}[htbp]
   \centering
   \caption{Data used for training and evaluation. No test item appears in the
-  training corpus (verified by identifier intersection; see
-  Section~\ref{sec:leakage}).}
+  training corpus (verified by identifier intersection).}
   \label{tab:composition}
   \small
   \begin{tabular}{lS[table-format=5.0]S[table-format=3.1]lS[table-format=5.0]}
@@ -69,45 +69,27 @@ GrailQA examples compete for capacity.
   \end{tabular}
 \end{table}
 
-\subsection{Leakage check}
-\label{sec:leakage}
-
-Identifier intersection between the training corpus and each test set is empty
-in all three cases. The check is not vacuous: CWQ derives its questions from
-WebQuestions and reuses the base identifier with an appended hash
+The leakage check is not vacuous: CWQ derives its questions from WebQuestions
+and reuses the base identifier with an appended hash
 (\texttt{WebQTest-322\_bd42258\ldots}), so \num{8493} training items carry a
-\texttt{WebQTest} prefix without being WebQSP test items.
-
-\begin{table}[htbp]
-  \centering
-  \caption{Overlap between the training corpus and the evaluation splits.}
-  \label{tab:leakage}
-  \begin{tabular}{lS[table-format=4.0]S[table-format=1.0]}
-    \toprule
-    Evaluation split & {Items} & {Overlap} \\
-    \midrule
-    WebQSP test  & 1637 & 0 \\
-    CWQ test     & 3531 & 0 \\
-    GrailQA dev  & 6763 & 0 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+\texttt{WebQTest} prefix without being WebQSP test items. Intersection with
+WebQSP test, CWQ test and GrailQA dev is empty in all three cases.
 
 \section{Training configuration}
 
 The official MemQ repository prescribes only ``follow the LLaMA-Factory,
-\texttt{lora rank=16}, \texttt{epoch=5.0}''; the paper itself reports no
-fine-tuning hyperparameters. The v9 configuration is therefore the reference
-for comparability. Sequence packing is the one deliberate deviation: without it,
+\texttt{lora rank=16}, \texttt{epoch=5.0}''; the paper reports no fine-tuning
+hyperparameters at all. The v9 configuration is therefore the reference for
+comparability. Sequence packing is the one deliberate deviation: without it,
 per-batch padding produces varying GEMM shapes that intermittently trigger an
 illegal memory access in a Tensile kernel on gfx1201, which terminates the run.
-Packing fixes every batch at \(2 \times 2048\) tokens, which also removes a
+Packing fixes every batch at \(2 \times 2048\) tokens and additionally removes a
 large amount of padding waste.
 
 \begin{table}[htbp]
   \centering
-  \caption{Training configuration. The effective number of optimiser updates is
-  kept close to v9 so that the learning rate carries over unchanged.}
+  \caption{Training configuration. The number of optimiser updates is kept close
+  to v9 so that the learning rate carries over unchanged.}
   \label{tab:config}
   \begin{tabular}{lll}
     \toprule
@@ -130,21 +112,22 @@ large amount of padding waste.
 
 \section{Checkpoint selection}
 
-The run recorded no validation loss (\texttt{eval\_strategy: "no"}), so the
-five per cent held-out split was scored retrospectively for seven candidates.
-The earliest retained checkpoint is the best, and the final one is
-\SI{5.8}{\percent} worse -- the same overfitting pattern the v11 run exhibits,
-where the validation loss reaches its minimum at \SI{79.9}{\percent} of training
-and then rises by \SI{16.8}{\percent}. Checkpoint~13750 corresponds to
-\SI{79.1}{\percent} of training, so the optimum sits at the edge of the retained
-range; earlier checkpoints had already been deleted by
-\texttt{save\_total\_limit}.
+The run recorded no validation loss (\texttt{eval\_strategy: "no"}), so the five
+per cent held-out split was scored retrospectively for seven candidates
+(Table~\ref{tab:checkpoints}). The earliest retained checkpoint has the lowest
+loss and the final one is \SI{5.8}{\percent} worse, which suggests mild
+overfitting.
+
+That ranking does not survive contact with the benchmarks. Table~\ref{tab:cand}
+shows the opposite order: the checkpoint with the \emph{worst} held-out loss
+produces the \emph{best} WebQSP answers, and the loss-optimal one is last on
+both benchmarks. Held-out loss is therefore not a usable selection criterion for
+this task; cp15000 was chosen because it leads on GrailQA, the target benchmark.
 
 \begin{table}[htbp]
   \centering
-  \caption{Held-out loss per checkpoint, measured on the identical five per cent
-  split (\num{348} packed sequences). Values are comparable among themselves
-  only; v11's figures were computed on a WebQSP/CWQ-only split.}
+  \caption{Held-out loss per checkpoint, on the identical five per cent split
+  (\num{348} packed sequences).}
   \label{tab:checkpoints}
   \begin{tabular}{lS[table-format=5.0]S[table-format=1.4]S[table-format=+1.1]}
     \toprule
@@ -161,12 +144,54 @@ range; earlier checkpoints had already been deleted by
   \end{tabular}
 \end{table}
 
-\section{WebQSP: v14 against v9}
+\begin{table}[htbp]
+  \centering
+  \caption{Candidate comparison. WebQSP: \num{300} test questions; GrailQA:
+  the \num{200}-question sample from the v9 transfer experiment. Paired
+  comparison, identical questions for all candidates.}
+  \label{tab:cand}
+  \begin{tabular}{lS[table-format=1.4]S[table-format=1.4]S[table-format=1.4]}
+    \toprule
+    Checkpoint & {Held-out loss} & {WebQSP F1} & {GrailQA F1} \\
+    \midrule
+    cp13750 & \bfseries 0.0104 & 0.7991 & 0.2704 \\
+    cp15000 & 0.0108 & 0.8114 & \bfseries 0.2826 \\
+    final   & 0.0110 & \bfseries 0.8129 & 0.2751 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
-Both models were evaluated on the same \num{300} WebQSP test questions, with
-identical memory-retrieval settings and against the same Freebase endpoint. The
-v9 baseline reproduces its documented full-test-set score (\num{0.8423} versus
-\num{0.8419} reported), which supports the representativeness of the subset.
+\section{Transfer to GrailQA}
+
+This is the central result. v9, trained on WebQSP and CWQ only, does not
+transfer: it matches not a single gold relation multiset and its edge hitting
+rate is below one per cent. Joint training lifts every measure substantially.
+
+\begin{table}[htbp]
+  \centering
+  \caption{GrailQA, \num{200} questions (122 zero-shot, 45 i.i.d.,
+  33 compositional). Same questions, same memory settings, same endpoint.}
+  \label{tab:grailqa}
+  \begin{tabular}{lS[table-format=1.4]S[table-format=1.4]S[table-format=2.1]}
+    \toprule
+    Metric & {v9} & {v14 (cp15000)} & {Factor} \\
+    \midrule
+    Hits@1              & 0.0400 & \bfseries 0.2850 & 7.1 \\
+    Macro-F1            & 0.0365 & \bfseries 0.2826 & 7.7 \\
+    Structure accuracy  & 0.0000 & \bfseries 0.2300 & {--} \\
+    EHR                 & 0.0061 & \bfseries 0.2340 & 38.4 \\
+    GoldGED $\downarrow$ & 3.5156 & \bfseries 1.9326 & {--} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+An important caveat: every question in this sample has
+\texttt{function: none}. The v9-era evaluation adapter excluded count, extrema,
+comparison and literal questions, so the operators added for v14 are
+\emph{not} exercised here. The sample measures GrailQA generalisation
+(61\,\% zero-shot relations), not the operator extension.
+
+\section{WebQSP: cost of joint training}
 
 \begin{table}[htbp]
   \centering
@@ -175,16 +200,11 @@ v9 baseline reproduces its documented full-test-set score (\num{0.8423} versus
   \label{tab:webqsp}
   \begin{tabular}{lS[table-format=1.4]S[table-format=1.4]S[table-format=+2.1]}
     \toprule
-    Metric & {v9} & {v14 (cp13750)} & {$\Delta$ (pp)} \\
+    Metric & {v9} & {v14 (cp15000)} & {$\Delta$ (pp)} \\
     \midrule
-    Structure accuracy & 0.4500 & \bfseries 0.6233 & +17.3 \\
-    EHR                & 0.5169 & \bfseries 0.6994 & +18.3 \\
-    GoldGED $\downarrow$ & 1.7567 & \bfseries 1.1271 & {-0.63} \\
-    \midrule
-    Hits@1             & \bfseries 0.8423 & 0.8020 & -4.0 \\
-    Macro-F1           & \bfseries 0.8542 & 0.7991 & -5.5 \\
-    \midrule
-    Reconstruction failures & 0 & 1 & \\
+    Structure accuracy   & 0.4500 & \bfseries 0.6367 & +18.7 \\
+    Hits@1               & \bfseries 0.8423 & 0.8188 & -2.4 \\
+    Macro-F1             & \bfseries 0.8542 & 0.8114 & -4.3 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -197,25 +217,82 @@ corpus (Table~\ref{tab:share}). Note that v14 uses the same memory at training
 and inference time, so train/inference consistency alone does not prevent the
 effect.
 
-With \(n = 300\) and \(p \approx 0.82\), the standard error is about
-\SI{2.2}{pp}; the \SI{-4.0}{pp} difference in Hits@1 is therefore borderline,
-whereas the \SI{+17.3}{pp} structural gain is far outside sampling noise.
+\section{Reproduction of the paper and the remaining gap}
 
-\section{Pipeline defects found during evaluation}
-
-Two defects were identified and fixed while producing the numbers above. Both
-affected \emph{all} models evaluated with this pipeline, not only v14, and the
-figures in Table~\ref{tab:webqsp} were obtained after the fixes.
+Table~\ref{tab:repro} compares the v9 baseline, evaluated over the full test
+sets, against the paper. CWQ reproduces the previously documented figures
+almost exactly (0.7241/0.7385 versus 0.725/0.738), which validates the
+measurement chain; the gap to the paper is therefore a property of this
+reproduction, not of the evaluation code.
 
 \begin{table}[htbp]
   \centering
-  \caption{Effect of the name-cache fix on v14 (cp13750), WebQSP, \num{300}
-  questions. Merging GrailQA entity names had overwritten \num{451} established
-  WebQSP/CWQ names with GrailQA's shorter \texttt{friendly\_name}
-  (e.g.\ ``nixon'' for ``Richard Nixon''), so entity resolution failed for every
+  \caption{v9 over the full test sets versus the paper (Table 3 of the
+  original). EHR is reported after the fix described in
+  Section~\ref{sec:defects}.}
+  \label{tab:repro}
+  \small
+  \begin{tabular}{llS[table-format=1.4]S[table-format=1.3]S[table-format=+2.1]}
+    \toprule
+    Dataset & Metric & {This work} & {Paper} & {$\Delta$ (pp)} \\
+    \midrule
+    WebQSP & Hits@1   & 0.8229 & 0.857 & -3.4 \\
+           & Macro-F1 & 0.8237 & 0.872 & -4.8 \\
+           & EHR      & 0.7950 & 0.858 & -6.3 \\
+    \midrule
+    CWQ    & Hits@1   & 0.7241 & 0.817 & -9.3 \\
+           & Macro-F1 & 0.7385 & 0.845 & -10.7 \\
+           & EHR      & 0.7370 & 0.886 & -14.9 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Three contributions to the CWQ gap were identified and quantified.
+
+\paragraph{Superlatives are never learned.}
+\num{1906} CWQ training questions (\SI{6.9}{\percent}) contain
+\texttt{ORDER BY \ldots LIMIT}, but \texttt{gen\_parse\_data.py} does not parse
+the sort clause, so the \texttt{order} field stays empty for all \num{27474}
+records. Consequently \emph{no} training sample contains a \texttt{Rank} step,
+although the prompt explicitly offers one. At test time \num{272} questions
+(\SI{8.3}{\percent}) require a superlative; none of the reconstructed queries
+contains \texttt{ORDER BY}. Without \texttt{LIMIT} the query returns all
+candidates instead of the extremum, so recall stays high while precision
+collapses -- these questions reach \(F_1 = 0.416\) against \(\approx 0.80\)
+elsewhere. Repairing this is worth roughly \SI{3.2}{pp} of CWQ F1 but requires
+regenerating the training data and retraining.
+
+\paragraph{Converging graphs cannot be expressed.}
+MemQ stores one parent per node (\texttt{all\_rel[node]['father']}), so a gold
+graph in which two paths meet at the same variable is not representable. This
+affects \num{53} of \num{3273} CWQ questions, which score \(F_1 = 0.145\)
+against \(0.748\) for tree-shaped ones -- roughly \SI{1}{pp} overall.
+
+\paragraph{The remainder is retrieval, not reconstruction.}
+Of \num{2084} two-branch direction UNIONs, \num{805} have the first branch in
+the gold set and \num{452} the second, so no simple rule would resolve the
+direction. Crucially \num{827} (\SI{39.7}{\percent}) contain \emph{neither}:
+the retrieved relation itself is wrong. The recall thresholds
+\(\gamma_1, \gamma_2\) of Equation~4 are a plausible lever here -- the paper
+defines the formula but states no values, so the 0.90/0.80 used here are
+uncalibrated.
+
+\section{Evaluation defects found and fixed}
+\label{sec:defects}
+
+Four defects were found while producing these numbers. All of them affected
+\emph{every} model measured with this pipeline, not just v14.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Effect of the name-cache fix (v14 cp13750, WebQSP, \num{300}
+  questions). Merging GrailQA entity names had overwritten \num{451} established
+  WebQSP/CWQ names with GrailQA's shorter \texttt{friendly\_name} (e.g.\
+  ``nixon'' for ``Richard Nixon''), so entity resolution failed for every
   affected question.}
   \label{tab:bugfix}
-  \begin{tabular}{lS[table-format=1.4]S[table-format=1.4]}
+  \small
+  \begin{tabular}{lS[table-format=2.4]S[table-format=2.4]}
     \toprule
     Metric & {Before fix} & {After fix} \\
     \midrule
@@ -227,11 +304,83 @@ figures in Table~\ref{tab:webqsp} were obtained after the fixes.
   \end{tabular}
 \end{table}
 
-The second defect concerns whitespace: \SI{5.6}{\percent} of the DeepSeek memory
-descriptions begin with whitespace, and the reconstruction step unconditionally
-inserts a blank before every variable. Both effects produce double blanks, which
-the plan parser rejects, so initially \emph{all} \num{300} reconstructions
-failed. Collapsing repeated blanks before parsing resolves this without
-affecting v9.
+\paragraph{Whitespace.}
+\SI{5.6}{\percent} of the DeepSeek memory descriptions begin with whitespace,
+and the reconstruction unconditionally inserts a blank before every variable;
+both produce double blanks, which the plan parser rejects. Initially
+\emph{all} \num{300} reconstructions failed.
+
+\paragraph{Structure accuracy blind to GrailQA.}
+GrailQA's gold queries bind the Freebase namespace to \texttt{:} rather than
+\texttt{ns:}, so the gold relation multiset came out empty and structure
+accuracy was \num{0} by construction. Their type constraints additionally put a
+class in object position, which matches the relation pattern and would be
+compared against relations.
+
+\paragraph{UNION branches invisible to EHR/GoldGED.}
+\texttt{extract\_triples} split the WHERE block on \verb!" .\n"! and kept only
+three-token lines. The reconstruction wraps a hop in
+\verb!{ s p o }UNION{ o p s }! whenever the direction is unknown, so both
+branches share a line, yield six tokens and were dropped -- every such edge
+counted as missing. The symptom was diagnostic: EHR was worst on the
+\emph{simplest} questions, which contain proportionally the most UNIONs, and
+queries answering perfectly (\(F_1 = 1.0\)) scored \(\text{EHR} = 0\).
+
+\begin{table}[htbp]
+  \centering
+  \caption{Edge hitting rate before and after correcting the triple
+  extraction.}
+  \label{tab:ehrfix}
+  \begin{tabular}{lS[table-format=1.3]S[table-format=1.3]S[table-format=1.3]}
+    \toprule
+    Dataset & {Before} & {After} & {Paper} \\
+    \midrule
+    CWQ            & 0.497 & \bfseries 0.737 & 0.886 \\
+    WebQSP         & 0.502 & \bfseries 0.795 & 0.858 \\
+    WebQSP, 1 hop  & 0.437 & \bfseries 0.872 & 0.816 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Answer-level metrics are unaffected by the last two fixes: they change how the
+reconstructed graph is read back, not what is generated.
+
+\section{Metric caveats}
+
+\paragraph{Structure accuracy is definition-dependent.}
+It is not a paper metric -- the paper defines only GoldGED (Eq.~5) and EHR
+(Eq.~6). Because relation alternatives inflate the reconstructed multiset,
+requiring exact equality penalises correct-but-broader queries.
+Table~\ref{tab:sa} shows the spread; none of the variants is objectively
+correct, so the figure should always be reported together with its definition.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Structure accuracy under three definitions (v9, full test sets).}
+  \label{tab:sa}
+  \small
+  \begin{tabular}{lS[table-format=1.4]S[table-format=1.4]}
+    \toprule
+    Definition & {CWQ} & {WebQSP} \\
+    \midrule
+    exact multiset equality (current) & 0.2687 & 0.4440 \\
+    one branch per UNION group        & 0.6270 & 0.7193 \\
+    gold multiset contained           & 0.7194 & 0.8165 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{EHR as computed here is an upper bound.}
+All UNION branches are treated as present edges, whereas the paper describes a
+single reconstructed graph \(G_{re}\). Counting only the first branch per group
+yields \num{0.658} for CWQ instead of \num{0.737}.
+
+\paragraph{Hits@1 is not deterministic.}
+Equation~7 defines it as \(\text{count}(\textit{Answer}[0] \in
+\textit{Golden})\), and the implementation matches. However
+\(\textit{Answer}[0]\) is the first row returned by the endpoint, and for
+\texttt{SELECT DISTINCT} without \texttt{ORDER BY} that order is undefined in
+SPARQL. Small run-to-run differences in Hits@1 are therefore expected, while
+Macro-F1 is order-independent and reproduces exactly.
 
 \end{document}
