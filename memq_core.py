@@ -551,15 +551,23 @@ def strip_filters(where_block):
     return "".join(out)
 
 
+_TERM = r'(?:\?[A-Za-z0-9_]+|ns:[A-Za-z_][A-Za-z0-9_.]*)'
+_TRIPLE_RE = re.compile(rf'({_TERM})\s+(ns:[A-Za-z_][A-Za-z0-9_.]*)\s+({_TERM})')
+
+
 def extract_triples(where_block):
-    cleaned = strip_filters(where_block)
-    cleaned = cleaned.replace("{", " ").replace("}", " ").replace("UNION", " ")
-    triples = []
-    for line in cleaned.split(" .\n"):
-        parts = line.strip().strip(".").split()
-        if len(parts) == 3:
-            triples.append(tuple(parts))
-    return triples
+    """Triples of a WHERE block, including those inside UNION branches.
+
+    The reconstruction wraps a hop in "{ s p o }UNION{ o p s }" whenever the
+    edge direction is unknown, and lists relation alternatives the same way.
+    Splitting on " .\\n" and keeping only 3-token lines therefore dropped every
+    such hop: the two branches end up on one line and yield six tokens. Those
+    edges then counted as missing, which made EHR/GoldGED worst on the SIMPLEST
+    questions -- they contain proportionally the most UNIONs -- and produced
+    EHR 0.0 for queries that answer perfectly (F1 = 1.0). Matching the triple
+    pattern directly is independent of braces, UNION and line breaks.
+    """
+    return [tuple(m) for m in _TRIPLE_RE.findall(strip_filters(where_block))]
 
 
 def edge_multiset(triples):
