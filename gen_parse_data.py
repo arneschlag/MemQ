@@ -453,7 +453,38 @@ def parse_sparql(sparql, beg_e, qid, question):
     # 4e. Parse remaining triples
     parse_triples(where_content, result["where"])
 
+    # 4f. Sort clause -> order spec (drives the Rank step downstream).
+    # parse_triples deliberately skips ORDER BY / LIMIT lines, so without this a
+    # superlative question loses its extremum: the query returns every candidate
+    # instead of the top one. The sort variable's binding triple is kept above,
+    # so only the direction/limit need recovering here.
+    order = _extract_order(sparql, result["where"])
+    if order is not None:
+        result["order"] = order
+
     return result
+
+
+_ORDER_RE = re.compile(
+    r"ORDER\s+BY\s+(.*?)\s+LIMIT\s+(\d+)(?:\s+OFFSET\s+(\d+))?", re.I | re.S)
+
+
+def _extract_order(sparql, where):
+    """Recover {order, var, start, len} from a gold ORDER BY ... LIMIT clause."""
+    m = _ORDER_RE.search(sparql or "")
+    if not m:
+        return None
+    expr = m.group(1).strip()
+    direction = "DESC" if re.match(r"DESC", expr, re.I) else "ASC"
+    expr = re.sub(r"^(DESC|ASC)\s*", "", expr, flags=re.I).strip()
+    variables = re.findall(r"\?[A-Za-z0-9_]+", expr)
+    if not variables or not any(variables[0] in str(t) for t in (where or [])):
+        return None
+    # Keep the xsd cast so graph_explain can type the Rank step; for an uncast
+    # key hand over the bare variable (graph_explain wants "?num", not "(?num)").
+    has_cast = any(c in expr.lower() for c in ("datetime", "float", "integer"))
+    return {"order": direction, "var": expr if has_cast else variables[0],
+            "start": int(m.group(3)) if m.group(3) else 0, "len": int(m.group(2))}
 
 
 # ── main processing ──────────────────────────────────────────────────────────

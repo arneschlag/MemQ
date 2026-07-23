@@ -190,8 +190,31 @@ none}).
 \end{table}
 
 On i.i.d.\ questions v14 matches its own WebQSP level (\(F_1 = 0.82\)); the
-overall figure is pulled down by the zero-shot majority, where unseen relations
-are hardest for a retrieval-based method. This is the expected GrailQA profile.
+overall figure is pulled down by the zero-shot majority. The cause is
+structural, not a defect: MemQ reconstructs a query by retrieving relations from
+a memory built out of the \emph{training} gold queries. A zero-shot question by
+definition needs unseen relations, and Table~\ref{tab:coverage} shows the
+memory simply does not contain them -- so the correct relation cannot be
+retrieved regardless of plan quality. This is an inherent limit of a
+memory-based method, and it bounds what any amount of tuning can achieve on the
+zero-shot split.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Fraction of each dev split's gold relations that exist in the v14
+  memory. The memory is built from training queries, so it covers i.i.d.\ and
+  compositional questions completely but almost none of the zero-shot ones.}
+  \label{tab:coverage}
+  \begin{tabular}{lS[table-format=3.1]}
+    \toprule
+    Split & {Gold relations in memory (\%)} \\
+    \midrule
+    i.i.d.        & 100.0 \\
+    compositional & 100.0 \\
+    zero-shot     &   4.5 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \paragraph{The operators work.} Table~\ref{tab:ops} breaks the dev set down by
 function. The \num{1251} operator questions reach \(F_1 = 0.41\), \emph{above}

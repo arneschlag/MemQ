@@ -21,7 +21,7 @@ with open("output/All_cached_mid_names.json","r") as f:
     mid_names = json.load(f)
 
 
-with open("output/merge_explain_data.json","r") as f:
+with open(os.environ.get("MEMQ_EXPLAIN_IN", "output/merge_explain_data.json"), "r") as f:
     data = json.load(f)
 
 

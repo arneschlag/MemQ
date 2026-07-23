@@ -95,10 +95,11 @@ def get_name(mid):
         return name
         
 
-with open("output/key_explain.json","r") as f:
+import os as _os
+with open(_os.environ.get("MEMQ_KEY_EXPLAIN", "output/key_explain.json"), "r") as f:
     key_explain = json.load(f)
 
-with open("output/merge_split_data.json","r") as f:
+with open(_os.environ.get("MEMQ_SPLIT_DATA", "output/merge_split_data.json"), "r") as f:
     data = json.load(f)
 
 def explain_find(sub_graph, all_rel):
@@ -415,5 +416,5 @@ for d in tqdm(data):
 with open("output/All_cached_mid_names.json","w") as f:
     json.dump(mid_names,f )
 
-with open("output/merge_explain_data.json", "w") as f:
+with open(_os.environ.get("MEMQ_EXPLAIN_OUT", "output/merge_explain_data.json"), "w") as f:
     json.dump(explain_data, f)
