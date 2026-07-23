@@ -42,7 +42,10 @@ def gold_answers(row):
         v = a.get("answer_argument")
         if v is None:
             continue
-        out.append("ns:" + v if a.get("answer_type") == "entity" else str(v))
+        # GrailQA writes answer_type "Entity" (capitalised); an entity MID must
+        # carry the ns: prefix to match what the reconstructed SPARQL returns
+        # from Freebase ("ns:m.0b787yg"), otherwise every entity answer misses.
+        out.append("ns:" + v if a.get("answer_type", "").lower() == "entity" else str(v))
     return out
 
 

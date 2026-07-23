@@ -164,32 +164,64 @@ this task; cp15000 was chosen because it leads on GrailQA, the target benchmark.
 \section{Transfer to GrailQA}
 
 This is the central result. v9, trained on WebQSP and CWQ only, does not
-transfer: it matches not a single gold relation multiset and its edge hitting
-rate is below one per cent. Joint training lifts every measure substantially.
+transfer: on the \num{200}-question sample it matches not a single gold relation
+multiset and its edge hitting rate is below one per cent (Hits@1 \num{0.040},
+F1 \num{0.037}). v14 reaches \num{0.285}/\num{0.283} on the same sample. The
+full dev set (\num{6763} questions) is evaluated below; it also exercises the
+operators, which the sample did not (it contained only \texttt{function:
+none}).
 
 \begin{table}[htbp]
   \centering
-  \caption{GrailQA, \num{200} questions (122 zero-shot, 45 i.i.d.,
-  33 compositional). Same questions, same memory settings, same endpoint.}
+  \caption{GrailQA dev, \num{6763} questions, v14 (cp15000). The headline number
+  is dominated by zero-shot questions, which are 54\,\% of the set.}
   \label{tab:grailqa}
-  \begin{tabular}{lS[table-format=1.4]S[table-format=1.4]S[table-format=2.1]}
+  \begin{tabular}{lS[table-format=4.0]S[table-format=1.4]S[table-format=1.4]}
     \toprule
-    Metric & {v9} & {v14 (cp15000)} & {Factor} \\
+    Split & {n} & {Macro-F1} & {Hits@1} \\
     \midrule
-    Hits@1              & 0.0400 & \bfseries 0.2850 & 7.1 \\
-    Macro-F1            & 0.0365 & \bfseries 0.2826 & 7.7 \\
-    Structure accuracy  & 0.0000 & \bfseries 0.2300 & {--} \\
-    EHR                 & 0.0061 & \bfseries 0.2340 & 38.4 \\
-    GoldGED $\downarrow$ & 3.5156 & \bfseries 1.9326 & {--} \\
+    overall             & 6763 & 0.3355 & 0.3305 \\
+    \midrule
+    i.i.d.              & 1593 & \bfseries 0.8185 & 0.8129 \\
+    compositional       & 1514 & 0.4266 & 0.4287 \\
+    zero-shot           & 3656 & 0.0873 & 0.0796 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-An important caveat: every question in this sample has
-\texttt{function: none}. The v9-era evaluation adapter excluded count, extrema,
-comparison and literal questions, so the operators added for v14 are
-\emph{not} exercised here. The sample measures GrailQA generalisation
-(61\,\% zero-shot relations), not the operator extension.
+On i.i.d.\ questions v14 matches its own WebQSP level (\(F_1 = 0.82\)); the
+overall figure is pulled down by the zero-shot majority, where unseen relations
+are hardest for a retrieval-based method. This is the expected GrailQA profile.
+
+\paragraph{The operators work.} Table~\ref{tab:ops} breaks the dev set down by
+function. The \num{1251} operator questions reach \(F_1 = 0.41\), \emph{above}
+the \num{0.32} of the plain questions, so the extension is not merely nominal.
+The reconstructed queries carry the right construct:
+\SI{96}{\percent} of argmax/argmin plans emit \texttt{ORDER BY} and
+\SI{99}{\percent} of count plans emit \texttt{COUNT()}. This is the direct
+contrast to CWQ superlatives (Section~\ref{sec:defects}, ``superlatives never
+learned''), where the same construct is produced \SI{0}{\percent} of the time --
+there the operator is absent from the training data, here it is present.
+
+\begin{table}[htbp]
+  \centering
+  \caption{GrailQA dev by operator, v14 (cp15000).}
+  \label{tab:ops}
+  \begin{tabular}{lS[table-format=4.0]S[table-format=1.4]S[table-format=1.4]}
+    \toprule
+    Function & {n} & {Macro-F1} & {Hits@1} \\
+    \midrule
+    none (path only)     & 5512 & 0.3182 & 0.3139 \\
+    \midrule
+    count                &  440 & 0.3205 & 0.3205 \\
+    argmax               &  298 & 0.4450 & 0.4698 \\
+    argmin               &  210 & 0.4381 & 0.4381 \\
+    comparison ($<\le>\ge$) & 303 & 0.4921 & 0.4356 \\
+    \midrule
+    all operators        & 1251 & \bfseries 0.4115 & 0.4037 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \section{WebQSP: cost of joint training}
 
